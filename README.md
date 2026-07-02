@@ -33,10 +33,16 @@ TypeScript with full organization support.
 
 ## Repo layout
 
+A single Hono worker project (no monorepo):
+
 ```
-apps/server     Workers API (Hono) — the Bitwarden-compatible server
-packages/db     Drizzle ORM schema for D1 (1:1 port of vaultwarden's schema)
-packages/shared Protocol enums/constants shared across packages
+src/            Worker source (Hono app, API routes, services)
+  src/db/       Drizzle ORM schema for D1 (1:1 port of vaultwarden's schema)
+  src/shared/   Protocol enums/constants
+test/           Vitest integration tests (real workerd)
+migrations/     Generated D1 migrations
+public/         Web vault static assets (bw_web_builds, fetched separately)
+wrangler.jsonc  Worker + bindings config
 ```
 
 The web vault UI is the official Bitwarden client (Vaultwarden's
@@ -47,11 +53,12 @@ served by the Worker as static assets — no custom client is maintained here.
 
 ```bash
 pnpm install
-cd apps/server && cp .dev.vars.example .dev.vars  # set JWT_SECRET
-pnpm db:migrate:local && pnpm dev                  # http://localhost:8787
+cp .dev.vars.example .dev.vars     # set JWT_SECRET
+pnpm db:migrate:local && pnpm dev  # http://localhost:8787
 ```
 
 Deploying to Cloudflare: see [docs/deployment.md](docs/deployment.md).
+Test coverage and vaultwarden parity: see [docs/testing.md](docs/testing.md).
 
 ## Testing
 

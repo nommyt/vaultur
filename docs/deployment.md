@@ -1,127 +1,300 @@
 # Deploying Vaultur
 
-Vaultur runs entirely on Cloudflare: Workers (Hono API), D1 (vault database),
-R2 (attachments + file Sends), KV (icon cache, rate limiting, ephemeral codes),
-Durable Objects (live-sync WebSocket hub), and the Email Sending binding
-(transactional mail).
+Vaultur is a single Cloudflare Worker (no monorepo, no build server). Everything
+it needs runs on Cloudflare:
 
-## Prerequisites
+| Concern                                          | Cloudflare product    | Binding         |
+| ------------------------------------------------ | --------------------- | --------------- |
+| API + web-vault host                             | Workers               | —               |
+| Vault database                                   | D1 (SQLite)           | `DB`            |
+| Attachments & file Sends                         | R2                    | `FILES`         |
+| Icon cache, 2FA email codes, rate-limit counters | KV                    | `KV`            |
+| Live-sync WebSocket hub                          | Durable Objects       | `NOTIFICATIONS` |
+| Transactional email                              | Email Sending         | `EMAIL`         |
+| Web vault UI                                     | Workers Static Assets | `ASSETS`        |
 
-- A Cloudflare account (free tier works; R2 requires a card on file)
-- `pnpm install` at the repo root
-- Wrangler authenticated: `pnpm dlx wrangler login`
+The whole thing fits inside Cloudflare's free tier (R2 needs a card on file but
+has a free allowance).
 
-## 1. Create resources
+---
+
+## 0. Prerequisites
+
+- A Cloudflare account.
+- Node.js 22+ and pnpm 10+.
+- Clone the repo and install: `pnpm install`
+- Authenticate Wrangler once: `pnpm wrangler login`
+
+All commands below are run from the **repository root**.
+
+---
+
+## 1. Create the storage resources
 
 ```bash
-cd apps/server
+# D1 database — copy the printed "database_id"
+pnpm wrangler d1 create vaultur
 
-# D1 database — copy the printed database_id into wrangler.jsonc
-pnpm dlx wrangler d1 create vaultur
-
-# KV namespace — copy the id into wrangler.jsonc
-pnpm dlx wrangler kv namespace create KV
+# KV namespace — copy the printed "id"
+pnpm wrangler kv namespace create KV
 
 # R2 bucket (name must match wrangler.jsonc)
-pnpm dlx wrangler r2 bucket create vaultur-files
+pnpm wrangler r2 bucket create vaultur-files
 ```
 
-Edit `apps/server/wrangler.jsonc` and replace `REPLACE_WITH_D1_DATABASE_ID`
-and `REPLACE_WITH_KV_NAMESPACE_ID`.
+Open **`wrangler.jsonc`** and paste the two IDs:
+
+```jsonc
+"d1_databases": [{ "binding": "DB", "database_name": "vaultur",
+                   "database_id": "PASTE_D1_ID", "migrations_dir": "migrations" }],
+"kv_namespaces": [{ "binding": "KV", "id": "PASTE_KV_ID" }],
+```
+
+(The R2 bucket and the Durable Object are referenced by name/class and need no ID.)
+
+---
 
 ## 2. Email Sending (recommended)
 
-Transactional email (verification, invites, 2FA codes, alerts) uses the
+Transactional email — email verification, org/emergency invites, 2FA email
+codes, new-device alerts, password hints — uses the
 [Email Sending binding](https://developers.cloudflare.com/email-service/).
+Without it, Vaultur runs in **no-mail mode** (see the note at the end of this
+section).
 
-```bash
-# One-time: onboard your domain for sending
-pnpm dlx wrangler email sending enable yourdomain.com
-```
+1. Onboard your domain for sending (one-time; requires the domain to be on
+   Cloudflare with Email Routing):
 
-Then set the sender in `wrangler.jsonc` vars:
+   ```bash
+   pnpm wrangler email sending enable yourdomain.com
+   ```
 
-```jsonc
-"EMAIL_FROM": "vault@yourdomain.com",
-"EMAIL_FROM_NAME": "Vaultur"
-```
+2. Set the sender in `wrangler.jsonc` `vars`:
 
-Without `EMAIL_FROM`, Vaultur runs in no-mail mode (like vaultwarden without
-SMTP): signups don't require verification, org invites auto-accept, password
-hints are shown inline if `SHOW_PASSWORD_HINT=true`.
+   ```jsonc
+   "EMAIL_FROM": "vault@yourdomain.com",
+   "EMAIL_FROM_NAME": "Vaultur"
+   ```
+
+3. (Optional, recommended) lock the sender address on the binding:
+
+   ```jsonc
+   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["vault@yourdomain.com"] }]
+   ```
+
+> **Testing tip:** until your domain's DKIM/SPF is fully propagated, Email
+> Sending will only deliver to **verified destination addresses**. Add your own
+> address as a destination in the Cloudflare dashboard (Email → Email Routing →
+> Destination addresses) to receive test mail.
+
+**No-mail mode** (no `EMAIL_FROM` set), which mirrors vaultwarden without SMTP:
+
+- signups don't require email verification;
+- org and emergency-access invites are auto-accepted when the invitee already
+  has an account;
+- password hints are shown inline only if `SHOW_PASSWORD_HINT=true`.
+
+---
 
 ## 3. Secrets
 
 ```bash
-cd apps/server
-openssl rand -base64 64 | tr -d '\n' | pnpm dlx wrangler secret put JWT_SECRET
-# Optional — enables the /admin API:
-openssl rand -base64 48 | tr -d '\n' | pnpm dlx wrangler secret put ADMIN_TOKEN
+# HS256 signing secret for all JWTs (access/refresh/invite/etc.)
+openssl rand -base64 64 | tr -d '\n' | pnpm wrangler secret put JWT_SECRET
+
+# Optional — enables the JSON admin API at /admin/*. Omit to disable admin entirely.
+openssl rand -base64 48 | tr -d '\n' | pnpm wrangler secret put ADMIN_TOKEN
 ```
 
-Rotating `JWT_SECRET` invalidates all sessions (clients just log in again);
-vault data is never touched by it.
+Rotating `JWT_SECRET` invalidates all existing sessions (clients simply log in
+again). It never touches vault data.
 
-## 4. Migrations
+---
+
+## 4. Apply database migrations
 
 ```bash
-pnpm --filter @vaultur/server db:migrate:remote
+pnpm db:migrate:remote      # wrangler d1 migrations apply vaultur --remote
 ```
 
-## 5. Web vault (official client)
+Schema changes: edit `src/db/schema.ts`, run `pnpm db:generate` (drizzle-kit
+writes a new file under `migrations/`), then apply. Never hand-edit generated SQL.
 
-Vaultur serves the prebuilt Bitwarden web vault (Vaultwarden's
-[bw_web_builds](https://github.com/dani-garcia/bw_web_builds) patch set) as
+---
+
+## 5. Install the web vault UI
+
+Vaultur serves the official Bitwarden web vault — Vaultwarden's
+[bw_web_builds](https://github.com/dani-garcia/bw_web_builds) patch set — as
 Workers static assets:
 
 ```bash
-bash scripts/fetch-web-vault.sh          # latest release
-bash scripts/fetch-web-vault.sh v2026.4.1 # pinned
+pnpm web-vault:fetch            # latest bw_web_builds release
+pnpm web-vault:fetch v2026.4.1  # or pin a version
 ```
+
+This populates `public/web-vault/` (gitignored). If you deploy **without**
+running this, a placeholder landing page is used instead — the API and all
+Bitwarden clients (mobile/extension/desktop/CLI) still work; only the browser
+web vault is missing.
+
+---
 
 ## 6. Deploy
 
 ```bash
-pnpm --filter @vaultur/server deploy
+pnpm deploy                     # bootstraps the assets dir, then wrangler deploy
 ```
 
-Point any Bitwarden client (mobile / extension / desktop / CLI) at
-`https://<your-worker-domain>` as a self-hosted server URL.
+Then point any Bitwarden client at `https://<your-worker-domain>` as the
+self-hosted server URL. The default `*.workers.dev` domain works for testing;
+for production use a custom domain (next section).
+
+Verify it's live:
+
+```bash
+curl https://<your-worker-domain>/alive           # -> an ISO timestamp
+curl https://<your-worker-domain>/api/config       # -> server metadata JSON
+```
+
+---
+
+## 7. Custom domain (recommended for production)
+
+The official mobile apps dislike `*.workers.dev`. Add a custom domain:
+
+1. In the Cloudflare dashboard: **Workers & Pages → vaultur → Settings →
+   Domains & Routes → Add → Custom domain**, e.g. `vault.example.com`.
+2. Set the public origin so links and JWT issuers are correct:
+
+   ```jsonc
+   // wrangler.jsonc vars
+   "DOMAIN": "https://vault.example.com"
+   ```
+
+3. Redeploy.
+
+---
+
+## 8. Mobile push notifications (optional)
+
+To relay push to the official Bitwarden mobile apps, register for a push
+installation id/key at <https://bitwarden.com/host> and set:
+
+```jsonc
+"PUSH_ENABLED": "true",
+"PUSH_INSTALLATION_ID": "…",
+"PUSH_INSTALLATION_KEY": "…"
+```
+
+Live sync over WebSockets (the `NOTIFICATIONS` Durable Object) works without
+this; push only affects background notifications on the mobile apps.
+
+---
+
+## 9. Scheduled jobs
+
+Two cron triggers are already configured in `wrangler.jsonc` and deploy
+automatically:
+
+- `11 3 * * *` (daily) — purge soft-deleted ciphers older than
+  `TRASH_AUTO_DELETE_DAYS`.
+- `*/15 * * * *` — purge expired Sends (and their R2 objects), expired
+  auth-requests, and stale incomplete-2FA records.
+
+---
 
 ## Configuration reference
 
-All vars live in `wrangler.jsonc` (`vars`) — see comments there. Highlights:
+All non-secret settings live in `wrangler.jsonc` under `vars`. Highlights:
 
-| Var                                  | Default        | Meaning                                                   |
-| ------------------------------------ | -------------- | --------------------------------------------------------- |
-| `DOMAIN`                             | request origin | Public origin used in links/JWT issuer                    |
-| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                         |
-| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                   |
-| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before login                   |
-| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails                           |
-| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds                                 |
-| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Purge window for soft-deleted items                       |
-| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay (get credentials at bitwarden.com/host) |
-| `ICON_CACHE_TTL_SECONDS`             | 30 days        | KV icon cache TTL                                         |
+| Var                                  | Default        | Meaning                                                |
+| ------------------------------------ | -------------- | ------------------------------------------------------ |
+| `DOMAIN`                             | request origin | Public origin used in links and JWT issuers            |
+| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                      |
+| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                |
+| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before first login          |
+| `INVITATIONS_ALLOWED`                | `true`         | Allow inviting users who have no account yet           |
+| `EMERGENCY_ACCESS_ALLOWED`           | `true`         | Enable emergency access                                |
+| `SENDS_ALLOWED`                      | `true`         | Enable Bitwarden Send                                  |
+| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails allowed to create orgs |
+| `PASSWORD_HINTS_ALLOW`               | `true`         | Allow storing/serving password hints                   |
+| `SHOW_PASSWORD_HINT`                 | `false`        | In no-mail mode, reveal hints inline                   |
+| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds over the client hash         |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME`     | — / `Vaultur`  | Sender; empty `EMAIL_FROM` = no-mail mode              |
+| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay                                      |
+| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Soft-delete purge window (0 disables)                  |
+| `ICON_SERVICE`                       | `internal`     | `internal` (proxy+cache) or a redirect service         |
+| `ICON_CACHE_TTL_SECONDS`             | `2592000`      | KV icon cache TTL (30 days)                            |
+| `LOGIN_RATELIMIT_MAX_BURST`          | `10`           | Login attempts per IP per minute (soft, KV-based)      |
+| `ADMIN_SESSION_LIFETIME_MINUTES`     | `20`           | Admin cookie lifetime                                  |
+
+Secrets (set with `wrangler secret put`, never in `wrangler.jsonc`):
+
+| Secret        | Required | Meaning                                           |
+| ------------- | -------- | ------------------------------------------------- |
+| `JWT_SECRET`  | **yes**  | HS256 signing key for all tokens                  |
+| `ADMIN_TOKEN` | no       | Enables `/admin/*`; omit to disable the admin API |
+
+---
 
 ## Local development
 
 ```bash
-cd apps/server
-cp .dev.vars.example .dev.vars   # set JWT_SECRET
-pnpm db:migrate:local
-pnpm dev                          # wrangler dev on http://localhost:8787
+cp .dev.vars.example .dev.vars     # set JWT_SECRET (and ADMIN_TOKEN if wanted)
+pnpm db:migrate:local              # apply migrations to the local D1
+pnpm dev                           # wrangler dev on http://localhost:8787
 ```
 
-Tests run against an in-memory Workers runtime (no deploy needed):
+`wrangler dev` uses a local simulation of D1/KV/R2/DO. The Email binding is a
+no-op locally unless you configure `"remote": true` on the `send_email` binding.
+
+Tests run against a real in-memory `workerd` (no deploy, no account needed):
 
 ```bash
-pnpm --filter @vaultur/server test
+pnpm typecheck
+pnpm test
 ```
+
+---
+
+## CI/CD (GitHub Actions)
+
+`.github/workflows/ci.yml` runs typecheck, tests, a deploy dry-run, and a format
+check on every push/PR. To add continuous deployment, create a Cloudflare API
+token (Workers Scripts: Edit) and add a deploy job:
+
+```yaml
+- run: pnpm web-vault:fetch
+- run: pnpm deploy
+  env:
+    CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+```
+
+Set `JWT_SECRET` (and `ADMIN_TOKEN`) once via `wrangler secret put`; they persist
+across deploys.
+
+---
 
 ## Migrating from vaultwarden
 
-The D1 schema is a 1:1 port of vaultwarden's SQLite schema (same tables and
-columns). A migration script that converts a vaultwarden `db.sqlite3` dump to
-D1-importable SQL (base64-encoding the two binary password columns) is planned
-in `scripts/`; until then the schema parity makes hand-migration mechanical.
+Vaultur's D1 schema is a 1:1 port of vaultwarden's SQLite schema — same table and
+column names — so a `db.sqlite3` dump is a near-mechanical import. The only
+transform needed is base64-encoding the two binary columns
+(`users.password_hash`/`salt`, and the `sends` password columns), which Vaultur
+stores as text. A dump-conversion script is planned under `scripts/`; until then
+the schema parity keeps hand-migration straightforward.
+
+---
+
+## Troubleshooting
+
+| Symptom                                         | Cause / fix                                                                                                                                              |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assets.directory ... does not exist` on deploy | Run `pnpm web-vault:fetch` (or let `pnpm deploy` write the placeholder).                                                                                 |
+| Mobile app can't connect on `*.workers.dev`     | Use a custom domain (section 7); some clients reject `workers.dev`.                                                                                      |
+| No emails arriving                              | Check `EMAIL_FROM` is set, the domain is onboarded (`wrangler email sending list`), and the recipient is a verified destination during DKIM propagation. |
+| `Invalid claim` / logged out after deploy       | `JWT_SECRET` changed or isn't set. Set it once as a secret.                                                                                              |
+| `/admin` returns 404                            | `ADMIN_TOKEN` is not set — the admin API is disabled by design.                                                                                          |
+| Live sync not updating                          | Confirm the `NOTIFICATIONS` Durable Object migration (`tag: v1`) deployed; check the client reaches `/notifications/hub`.                                |
