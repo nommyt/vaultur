@@ -35,11 +35,13 @@ TypeScript with full organization support.
 
 ```
 apps/server     Workers API (Hono) — the Bitwarden-compatible server
-apps/web        Vaultur Console (TanStack React SPA) — WIP
 packages/db     Drizzle ORM schema for D1 (1:1 port of vaultwarden's schema)
 packages/shared Protocol enums/constants shared across packages
-e2e             Playwright end-to-end suite (ported from vaultwarden)
 ```
+
+The web vault UI is the official Bitwarden client (Vaultwarden's
+[bw_web_builds](https://github.com/dani-garcia/bw_web_builds) patch set),
+served by the Worker as static assets — no custom client is maintained here.
 
 ## Quick start
 

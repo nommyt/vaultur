@@ -23,6 +23,7 @@ import { eventRoutes, eventCollectRoutes } from './api/events';
 import { iconRoutes } from './api/icons';
 import { adminRoutes } from './api/admin';
 import { miscRoutes } from './api/misc';
+import { publicRoutes } from './api/public';
 
 export function createApp() {
   const app = new Hono<AppEnv>();
@@ -42,6 +43,7 @@ export function createApp() {
   // Public (unauthenticated) API routes must be mounted before the
   // requireAuth-guarded routers that share the /api prefix.
   app.route('/api', sendAccessRoutes);
+  app.route('/api', publicRoutes);
   app.route('/api', syncRoutes);
   app.route('/api', cipherRoutes);
   app.route('/api', attachmentRoutes);

@@ -8,6 +8,7 @@ import {
   invitations,
   nowDb,
   fromDb,
+  organizationApiKey,
   users,
   usersOrganizations,
   type Db,
@@ -362,6 +363,7 @@ async function authenticatedResponse(
 async function apiKeyLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip: string) {
   await checkLoginRateLimit(c.env.KV, config, ip);
 
+  if (data.scope === 'api.organization') return organizationApiKeyLogin(c, db, config, data, ip);
   if (data.scope !== 'api') err('Scope not supported');
 
   const clientId = data.clientId!;
@@ -427,11 +429,49 @@ async function apiKeyLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip
   });
 }
 
+// Organization API-key login (scope api.organization) — used by the directory
+// connector to obtain a short-lived token for /public/organization/import.
+async function organizationApiKeyLogin(
+  c: Ctx,
+  db: Db,
+  config: Config,
+  data: ConnectData,
+  ip: string,
+) {
+  const clientId = data.clientId ?? '';
+  if (!clientId.startsWith('organization.')) err('Malformed client_id');
+  const orgId = clientId.slice('organization.'.length);
+
+  const row = await db.query.organizationApiKey.findFirst({
+    where: eq(organizationApiKey.orgUuid, orgId),
+  });
+  if (!row) err('Invalid client_id');
+  if (!constantTimeEqualStr(row.apiKey, data.clientSecret ?? '')) err('Incorrect client_secret');
+
+  const accessToken = await encodeJwt(
+    c.env.JWT_SECRET,
+    basicClaims({
+      domain: config.domain,
+      kind: 'api.organization',
+      sub: row.uuid,
+      ttlSeconds: 3600,
+      extra: { client_id: `organization.${orgId}`, client_sub: orgId, scope: ['api.organization'] },
+    }),
+  );
+
+  return c.json({
+    access_token: accessToken,
+    expires_in: 3600,
+    token_type: 'Bearer',
+    scope: 'api.organization',
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Prelogin & registration
 // ---------------------------------------------------------------------------
 
-identityRoutes.post('/accounts/prelogin', async (c) => {
+async function prelogin(c: Context<AppEnv>) {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const email = String(ci(body, 'email') ?? '');
   const db = c.get('db');
@@ -443,7 +483,9 @@ identityRoutes.post('/accounts/prelogin', async (c) => {
     kdfMemory: user?.clientKdfMemory ?? null,
     kdfParallelism: user?.clientKdfParallelism ?? null,
   });
-});
+}
+identityRoutes.post('/accounts/prelogin', prelogin);
+identityRoutes.post('/accounts/prelogin/password', prelogin);
 
 interface RegisterVerifyClaims {
   sub: string;

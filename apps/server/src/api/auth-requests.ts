@@ -142,7 +142,7 @@ authRequestRoutes.get('/auth-requests/:id/response', async (c) => {
 
 authRequestRoutes.use('*', requireAuth);
 
-authRequestRoutes.get('/auth-requests', async (c) => {
+async function listAuthRequests(c: Context<AppEnv>) {
   const { user } = auth(c);
   const rows = await c.get('db').query.authRequests.findMany({
     where: eq(authRequests.userUuid, user.uuid),
@@ -156,7 +156,10 @@ authRequestRoutes.get('/auth-requests', async (c) => {
     object: 'list',
     continuationToken: null,
   });
-});
+}
+// /auth-requests/pending must be registered before /auth-requests/:id
+authRequestRoutes.get('/auth-requests/pending', listAuthRequests);
+authRequestRoutes.get('/auth-requests', listAuthRequests);
 
 authRequestRoutes.get('/auth-requests/:id', async (c) => {
   const { user } = auth(c);

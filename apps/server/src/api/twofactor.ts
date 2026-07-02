@@ -143,6 +143,15 @@ twofactorRoutes.get('/two-factor', async (c) => {
   return c.json({ data, object: 'list', continuationToken: null });
 });
 
+// Clients poll this at login; device verification is not supported.
+twofactorRoutes.get('/two-factor/get-device-verification-settings', (c) =>
+  c.json({
+    isDeviceVerificationSectionEnabled: false,
+    unknownDeviceVerificationEnabled: false,
+    object: 'deviceVerificationSettings',
+  }),
+);
+
 twofactorRoutes.post('/two-factor/get-recover', async (c) => {
   const { user } = auth(c);
   const body = (await c.req.json()) as Record<string, unknown>;

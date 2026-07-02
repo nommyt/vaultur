@@ -145,11 +145,34 @@ async function userOverview(db: Db, userUuid: string) {
   };
 }
 
-adminRoutes.get('/users', async (c) => {
+async function usersOverview(c: Ctx) {
   const db = c.get('db');
   const all = await db.select({ uuid: users.uuid }).from(users);
   const data = await Promise.all(all.map((u) => userOverview(db, u.uuid)));
   return c.json(data);
+}
+adminRoutes.get('/users', usersOverview);
+adminRoutes.get('/users/overview', usersOverview); // vaultwarden admin panel alias
+
+// End the admin session
+adminRoutes.get('/logout', (c) => {
+  setCookie(c, ADMIN_COOKIE, '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Strict',
+    path: '/admin',
+    maxAge: 0,
+  });
+  return c.json({ ok: true });
+});
+
+adminRoutes.get('/users/by-mail/:email', async (c) => {
+  const db = c.get('db');
+  const user = await db.query.users.findFirst({
+    where: eq(users.email, c.req.param('email').toLowerCase()),
+  });
+  if (!user) return c.json({ message: 'User not found' }, 404);
+  return c.json(await userOverview(db, user.uuid));
 });
 
 adminRoutes.get('/users/:uuid', async (c) => {
@@ -222,7 +245,7 @@ adminRoutes.post('/invite', async (c) => {
   return c.json({ email, object: 'invitation' });
 });
 
-adminRoutes.get('/organizations', async (c) => {
+async function organizationsOverview(c: Ctx) {
   const db = c.get('db');
   const orgs = await db.select().from(organizations);
   const data = await Promise.all(
@@ -250,7 +273,9 @@ adminRoutes.get('/organizations', async (c) => {
     }),
   );
   return c.json(data);
-});
+}
+adminRoutes.get('/organizations', organizationsOverview);
+adminRoutes.get('/organizations/overview', organizationsOverview); // vaultwarden admin alias
 
 adminRoutes.post('/organizations/:uuid/delete', async (c) => {
   const db = c.get('db');

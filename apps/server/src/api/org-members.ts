@@ -24,7 +24,7 @@ import { requireAuth, auth } from '../auth/middleware';
 import { err, notFound } from '../error';
 import { basicClaims, decodeJwt, encodeJwt, issuer } from '../auth/jwt';
 import { ci, normalizeEmail, uuid } from '../util';
-import { findUserByEmail, newUserShell } from '../services/users';
+import { findUserByEmail, newUserShell, passwordFields } from '../services/users';
 import { createMailer, mail } from '../services/mail';
 import {
   findConfirmedMembership,
@@ -876,12 +876,17 @@ for (const [path, revoke] of [
   ['revoke', true],
   ['restore', false],
 ] as const) {
-  orgMemberRoutes.put(`/organizations/:orgId/users/:memberId/${path}`, async (c) => {
+  const handler = async (c: Ctx) => {
     const orgId = c.req.param('orgId');
     await requireMember(c, orgId, MembershipType.Admin);
     await setRevoked(c, orgId!, c.req.param('memberId')!, revoke);
     return c.body(null, 200);
-  });
+  };
+  orgMemberRoutes.put(`/organizations/:orgId/users/:memberId/${path}`, handler);
+  // Newer clients append /vnext to the restore path
+  if (path === 'restore') {
+    orgMemberRoutes.put('/organizations/:orgId/users/:memberId/restore/vnext', handler);
+  }
 }
 
 // ===========================================================================
@@ -905,6 +910,31 @@ orgMemberRoutes.get('/organizations/:orgId/groups', async (c) => {
     .get('db')
     .query.groups.findMany({ where: eq(groups.organizationsUuid, orgId!) });
   return c.json({ data: rows.map(groupToJson), object: 'list', continuationToken: null });
+});
+
+// Groups with their collection assignments (admin console) — /groups/details
+orgMemberRoutes.get('/organizations/:orgId/groups/details', async (c) => {
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Manager);
+  const db = c.get('db');
+  const rows = await db.query.groups.findMany({ where: eq(groups.organizationsUuid, orgId) });
+  const data = [];
+  for (const g of rows) {
+    const cols = await db
+      .select()
+      .from(collectionsGroups)
+      .where(eq(collectionsGroups.groupsUuid, g.uuid));
+    data.push({
+      ...groupToJson(g),
+      collections: cols.map((r) => ({
+        id: r.collectionsUuid,
+        readOnly: r.readOnly,
+        hidePasswords: r.hidePasswords,
+        manage: r.manage,
+      })),
+    });
+  }
+  return c.json({ data, object: 'list', continuationToken: null });
 });
 
 async function upsertGroup(c: Ctx, existing: Group | null) {
@@ -1012,10 +1042,44 @@ orgMemberRoutes.get('/organizations/:orgId/groups/:groupId', async (c) => {
   return c.json(groupToJson(await loadGroup(c, orgId)));
 });
 
-orgMemberRoutes.put('/organizations/:orgId/groups/:groupId', async (c) => {
+async function updateGroupHandler(c: Ctx) {
   const orgId = c.req.param('orgId')!;
   await requireMember(c, orgId, MembershipType.Admin);
   return upsertGroup(c, await loadGroup(c, orgId));
+}
+orgMemberRoutes.put('/organizations/:orgId/groups/:groupId', updateGroupHandler);
+orgMemberRoutes.post('/organizations/:orgId/groups/:groupId', updateGroupHandler);
+
+// Remove a single member from a group
+orgMemberRoutes.post('/organizations/:orgId/groups/:groupId/delete-user/:memberId', async (c) => {
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const group = await loadGroup(c, orgId);
+  await db
+    .delete(groupsUsers)
+    .where(
+      and(
+        eq(groupsUsers.groupsUuid, group.uuid),
+        eq(groupsUsers.usersOrganizationsUuid, c.req.param('memberId')!),
+      ),
+    );
+  return c.body(null, 200);
+});
+orgMemberRoutes.delete('/organizations/:orgId/groups/:groupId/user/:memberId', async (c) => {
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const group = await loadGroup(c, orgId);
+  await db
+    .delete(groupsUsers)
+    .where(
+      and(
+        eq(groupsUsers.groupsUuid, group.uuid),
+        eq(groupsUsers.usersOrganizationsUuid, c.req.param('memberId')!),
+      ),
+    );
+  return c.body(null, 200);
 });
 
 async function deleteGroupHandler(c: Ctx) {
@@ -1037,6 +1101,30 @@ async function deleteGroupHandler(c: Ctx) {
 }
 orgMemberRoutes.delete('/organizations/:orgId/groups/:groupId', deleteGroupHandler);
 orgMemberRoutes.post('/organizations/:orgId/groups/:groupId/delete', deleteGroupHandler);
+
+// Bulk delete groups ({ ids }) via DELETE on the base path
+orgMemberRoutes.delete('/organizations/:orgId/groups', async (c) => {
+  const { user, device } = auth(c);
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const ids = ci<string[]>(body, 'ids') ?? [];
+  for (const id of ids) {
+    const group = await db.query.groups.findFirst({ where: eq(groups.uuid, id) });
+    if (!group || group.organizationsUuid !== orgId) continue;
+    await db.delete(groups).where(eq(groups.uuid, id));
+    await logOrgEvent(db, {
+      eventType: EventType.GroupDeleted,
+      orgUuid: orgId,
+      actUserUuid: user.uuid,
+      groupUuid: id,
+      deviceType: device.atype,
+      ip: c.get('ip'),
+    });
+  }
+  return c.body(null, 200);
+});
 
 orgMemberRoutes.get('/organizations/:orgId/groups/:groupId/users', async (c) => {
   const orgId = c.req.param('orgId')!;
@@ -1142,7 +1230,7 @@ orgMemberRoutes.get('/organizations/:orgId/policies/:type', async (c) => {
   return c.json(policyToJson(row));
 });
 
-orgMemberRoutes.put('/organizations/:orgId/policies/:type', async (c) => {
+async function putPolicyHandler(c: Ctx) {
   const { user: actor, device } = auth(c);
   const orgId = c.req.param('orgId')!;
   await requireMember(c, orgId, MembershipType.Admin);
@@ -1230,7 +1318,9 @@ orgMemberRoutes.put('/organizations/:orgId/policies/:type', async (c) => {
     ip: c.get('ip'),
   });
   return c.json(policyToJson(row));
-});
+}
+orgMemberRoutes.put('/organizations/:orgId/policies/:type', putPolicyHandler);
+orgMemberRoutes.put('/organizations/:orgId/policies/:type/vnext', putPolicyHandler);
 
 // Auto-enroll status (admin password reset — not supported)
 orgMemberRoutes.get('/organizations/:orgId/auto-enroll-status', async (c) => {
@@ -1241,3 +1331,119 @@ orgMemberRoutes.get('/organizations/:orgId/auto-enroll-status', async (c) => {
   if (!org) notFound("Organization doesn't exist");
   return c.json({ id: org.uuid, resetPasswordEnabled: false });
 });
+
+// Admin account recovery: view a member's reset-password details
+orgMemberRoutes.get('/organizations/:orgId/users/:memberId/reset-password-details', async (c) => {
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const org = (await db.query.organizations.findFirst({ where: eq(organizations.uuid, orgId) }))!;
+  const membership = await db.query.usersOrganizations.findFirst({
+    where: and(
+      eq(usersOrganizations.uuid, c.req.param('memberId')!),
+      eq(usersOrganizations.orgUuid, orgId),
+    ),
+  });
+  if (!membership) err("User to reset isn't member of required organization");
+  const member = (await db.query.users.findFirst({ where: eq(users.uuid, membership.userUuid) }))!;
+  return c.json({
+    object: 'organizationUserResetPasswordDetails',
+    organizationUserId: membership.uuid,
+    kdf: member.clientKdfType,
+    kdfIterations: member.clientKdfIter,
+    kdfMemory: member.clientKdfMemory,
+    kdfParallelism: member.clientKdfParallelism,
+    resetPasswordKey: membership.resetPasswordKey,
+    encryptedPrivateKey: org.privateKey,
+  });
+});
+
+// Admin account recovery: reset a member's master password
+orgMemberRoutes.put('/organizations/:orgId/users/:memberId/reset-password', async (c) => {
+  const { user: actor, device } = auth(c);
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const config = c.get('config');
+  const body = (await c.req.json()) as Record<string, unknown>;
+
+  const membership = await db.query.usersOrganizations.findFirst({
+    where: and(
+      eq(usersOrganizations.uuid, c.req.param('memberId')!),
+      eq(usersOrganizations.orgUuid, orgId),
+    ),
+  });
+  if (!membership) err("User to reset isn't member of required organization");
+  if (!membership.resetPasswordKey) err('Password reset not or not correctly enrolled');
+  if (membership.status !== MembershipStatus.Confirmed) {
+    err('Organization user must be confirmed for password reset functionality');
+  }
+
+  const newHash = ci<string>(body, 'newMasterPasswordHash');
+  const key = ci<string>(body, 'key');
+  if (!newHash || !key) err('Missing required fields');
+
+  const member = (await db.query.users.findFirst({ where: eq(users.uuid, membership.userUuid) }))!;
+  const org = (await db.query.organizations.findFirst({ where: eq(organizations.uuid, orgId) }))!;
+  const pw = await passwordFields(newHash, config.passwordIterations);
+  await db
+    .update(users)
+    .set({ ...pw, akey: key, securityStamp: uuid(), updatedAt: nowDb() })
+    .where(eq(users.uuid, member.uuid));
+
+  const mailer = createMailer(c.env.EMAIL, config);
+  if (mailer.enabled) {
+    c.executionCtx.waitUntil(
+      mail.adminResetPassword(mailer, config, member.email, member.name, org.name),
+    );
+  }
+
+  await logOrgEvent(db, {
+    eventType: EventType.OrganizationUserAdminResetPassword,
+    orgUuid: orgId,
+    actUserUuid: actor.uuid,
+    orgUserUuid: membership.uuid,
+    deviceType: device.atype,
+    ip: c.get('ip'),
+  });
+  return c.body(null, 200);
+});
+
+// Account-recovery (reset password) enrollment — user stores their org-wrapped
+// key so admins can reset their master password (vaultwarden reset-password-enrollment).
+orgMemberRoutes.put(
+  '/organizations/:orgId/users/:memberId/reset-password-enrollment',
+  async (c) => {
+    const { user } = auth(c);
+    const orgId = c.req.param('orgId')!;
+    const memberId = c.req.param('memberId')!;
+    const db = c.get('db');
+    const body = (await c.req.json()) as Record<string, unknown>;
+
+    const membership = await db.query.usersOrganizations.findFirst({
+      where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId)),
+    });
+    if (!membership || membership.userUuid !== user.uuid) {
+      err("User to enroll isn't member of required organization");
+    }
+
+    const rawKey = ci<string>(body, 'resetPasswordKey');
+    const resetPasswordKey = rawKey && rawKey !== '' ? rawKey : null;
+
+    await db
+      .update(usersOrganizations)
+      .set({ resetPasswordKey })
+      .where(eq(usersOrganizations.uuid, memberId));
+
+    await logOrgEvent(db, {
+      eventType: resetPasswordKey
+        ? EventType.OrganizationUserResetPasswordEnroll
+        : EventType.OrganizationUserResetPasswordWithdraw,
+      orgUuid: orgId,
+      actUserUuid: user.uuid,
+      orgUserUuid: memberId,
+      ip: c.get('ip'),
+    });
+    return c.body(null, 200);
+  },
+);

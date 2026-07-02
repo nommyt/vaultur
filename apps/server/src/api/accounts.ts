@@ -11,9 +11,10 @@ import {
   sends as sendsTable,
   twofactor,
   users,
+  usersOrganizations,
   type User,
 } from '@vaultur/db';
-import { EventType, TwoFactorType, UpdateType } from '@vaultur/shared';
+import { EventType, MembershipStatus, TwoFactorType, UpdateType } from '@vaultur/shared';
 import type { AppEnv } from '../env';
 import { requireAuth, auth } from '../auth/middleware';
 import { err, errCode, notFound, unauthorized } from '../error';
@@ -39,6 +40,19 @@ export const accountRoutes = new Hono<AppEnv>();
 type Ctx = Context<AppEnv>;
 
 // Public endpoints first (no auth)
+
+// Some clients call prelogin under /api as well as /identity.
+accountRoutes.post('/accounts/prelogin', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const email = String(ci(body, 'email') ?? '');
+  const user = email ? await findUserByEmail(c.get('db'), email) : undefined;
+  return c.json({
+    kdf: user?.clientKdfType ?? 0,
+    kdfIterations: user?.clientKdfIter ?? 600_000,
+    kdfMemory: user?.clientKdfMemory ?? null,
+    kdfParallelism: user?.clientKdfParallelism ?? null,
+  });
+});
 accountRoutes.post('/accounts/password-hint', async (c) => {
   const config = c.get('config');
   const body = (await c.req.json()) as Record<string, unknown>;
@@ -92,8 +106,9 @@ accountRoutes.post('/accounts/verify-email-token', async (c) => {
   return c.body(null, 200);
 });
 
-// Account recovery delete (public; token authenticated)
-accountRoutes.post('/accounts/recover-delete', async (c) => {
+// Account recovery delete (public; requests the deletion email) — vaultwarden
+// names this /accounts/delete-recover.
+accountRoutes.post('/accounts/delete-recover', async (c) => {
   const config = c.get('config');
   const body = (await c.req.json()) as Record<string, unknown>;
   const email = normalizeEmail(String(ci(body, 'email') ?? ''));
@@ -325,6 +340,76 @@ accountRoutes.post('/accounts/kdf', async (c) => {
   return c.body(null, 200);
 });
 
+// Set the initial master password for an account that was created without one
+// (org-invite / emergency-access shells). vaultwarden post_set_password.
+accountRoutes.post('/accounts/set-password', async (c) => {
+  const { user } = auth(c);
+  const db = c.get('db');
+  const config = c.get('config');
+  const body = (await c.req.json()) as Record<string, unknown>;
+
+  if (user.privateKey) err('Account already initialized, cannot set password');
+
+  const masterPasswordHash = ci<string>(body, 'masterPasswordHash');
+  const key = ci<string>(body, 'key');
+  if (!masterPasswordHash || !key) err('Missing required fields');
+  const hint = (ci<string>(body, 'masterPasswordHint') ?? null) as string | null;
+  if (hint && !config.passwordHintsAllow) {
+    err('Password hints have been disabled by the administrator. Remove the hint and try again.');
+  }
+
+  const kdf = Number(ci(body, 'kdf') ?? 0);
+  const kdfIterations = Number(ci(body, 'kdfIterations') ?? 600_000);
+  const kdfMemory = (ci<number>(body, 'kdfMemory') ?? null) as number | null;
+  const kdfParallelism = (ci<number>(body, 'kdfParallelism') ?? null) as number | null;
+
+  const keys = ci<Record<string, unknown>>(body, 'keys');
+  const pw = await passwordFields(masterPasswordHash, config.passwordIterations);
+
+  await db
+    .update(users)
+    .set({
+      ...pw,
+      akey: key,
+      passwordHint: hint && hint.trim() !== '' ? hint.trim() : null,
+      clientKdfType: kdf,
+      clientKdfIter: kdfIterations,
+      clientKdfMemory: kdf === 1 ? kdfMemory : null,
+      clientKdfParallelism: kdf === 1 ? kdfParallelism : null,
+      privateKey: keys
+        ? (ci<string>(keys, 'encryptedPrivateKey') ?? user.privateKey)
+        : user.privateKey,
+      publicKey: keys ? (ci<string>(keys, 'publicKey') ?? user.publicKey) : user.publicKey,
+      // vaultwarden keeps the security stamp (stamp exception for revision_date)
+      stampException: stampException(['/accounts/key-management/rotate'], user.securityStamp),
+      updatedAt: nowDb(),
+    })
+    .where(eq(users.uuid, user.uuid));
+
+  // Accept any open org invitations for this user
+  await db
+    .update(usersOrganizations)
+    .set({ status: MembershipStatus.Accepted })
+    .where(
+      and(
+        eq(usersOrganizations.userUuid, user.uuid),
+        eq(usersOrganizations.status, MembershipStatus.Invited),
+      ),
+    );
+
+  const mailer = createMailer(c.env.EMAIL, config);
+  if (mailer.enabled) c.executionCtx.waitUntil(mail.welcome(mailer, config, user.email));
+
+  await logUserEvent(
+    db,
+    EventType.UserChangedPassword,
+    user.uuid,
+    auth(c).device.atype,
+    c.get('ip'),
+  );
+  return c.body(null, 200);
+});
+
 accountRoutes.post('/accounts/security-stamp', async (c) => {
   const { user } = auth(c);
   const body = (await c.req.json()) as Record<string, unknown>;
@@ -481,7 +566,11 @@ accountRoutes.post('/accounts/rotate-api-key', (c) => apiKeyHandler(c, true));
 // Key rotation
 // ---------------------------------------------------------------------------
 
-const ROTATE_PATHS = ['/accounts/key', '/accounts/key-management/rotate'] as const;
+const ROTATE_PATHS = [
+  '/accounts/key',
+  '/accounts/key-management/rotate',
+  '/accounts/key-management/rotate-user-account-keys',
+] as const;
 for (const path of ROTATE_PATHS) {
   accountRoutes.post(path, rotateKey);
   accountRoutes.put(path, rotateKey);

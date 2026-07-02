@@ -24,9 +24,10 @@ export interface AuthContext {
  * declared across the api/* modules.
  */
 const PUBLIC_API_ROUTES: [string, RegExp][] = [
+  ['POST', /^\/api\/accounts\/prelogin$/],
   ['POST', /^\/api\/accounts\/password-hint$/],
   ['POST', /^\/api\/accounts\/verify-email-token$/],
-  ['POST', /^\/api\/accounts\/recover-delete$/],
+  ['POST', /^\/api\/accounts\/delete-recover$/],
   ['POST', /^\/api\/accounts\/delete-recover-token$/],
   ['POST', /^\/api\/two-factor\/send-email-login$/],
   ['POST', /^\/api\/two-factor\/recover$/],
@@ -37,6 +38,8 @@ const PUBLIC_API_ROUTES: [string, RegExp][] = [
   ['GET', /^\/api\/auth-requests\/[^/]+\/response$/],
   ['GET', /^\/api\/devices\/knowndevice$/],
   ['GET', /^\/api\/organizations\/[^/]+\/policies\/token$/],
+  // Org-API-key authenticated (directory connector) — guards itself
+  ['POST', /^\/api\/public\/organization\/import$/],
 ];
 
 function isPublicApiRoute(method: string, pathname: string): boolean {

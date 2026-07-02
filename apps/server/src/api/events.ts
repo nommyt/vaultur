@@ -116,9 +116,7 @@ eventRoutes.get('/ciphers/:id/events', async (c) => {
 // Client event collection (POST /events/collect) — mounted at /events
 // ---------------------------------------------------------------------------
 
-eventCollectRoutes.use('*', requireAuth);
-
-eventCollectRoutes.post('/collect', async (c) => {
+async function collectHandler(c: Ctx) {
   const { user, device } = auth(c);
   const db = c.get('db');
   const body = (await c.req.json()) as unknown;
@@ -152,4 +150,10 @@ eventCollectRoutes.post('/collect', async (c) => {
     });
   }
   return c.body(null, 200);
-});
+}
+
+// Clients post events to /api/collect and (older) /events/collect.
+eventRoutes.post('/collect', collectHandler);
+
+eventCollectRoutes.use('*', requireAuth);
+eventCollectRoutes.post('/collect', collectHandler);

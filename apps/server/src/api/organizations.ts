@@ -6,7 +6,11 @@ import {
   collections,
   collectionsGroups,
   groupsUsers,
+  nowDb,
+  organizationApiKey,
   organizations,
+  toApi,
+  users,
   usersCollections,
   usersOrganizations,
   type Collection,
@@ -14,12 +18,19 @@ import {
   type Membership,
   type Organization,
 } from '@vaultur/db';
-import { EventType, MembershipStatus, MembershipType, UpdateType } from '@vaultur/shared';
+import {
+  EventType,
+  MembershipStatus,
+  MembershipType,
+  OrganizationApiKeyType,
+  UpdateType,
+} from '@vaultur/shared';
 import type { AppEnv } from '../env';
 import { requireAuth, auth } from '../auth/middleware';
 import { err, notFound } from '../error';
 import { verifyPassword } from '../crypto';
 import { ci, uuid } from '../util';
+import { generateApiKey } from '../services/users';
 import {
   findConfirmedMembership,
   findConfirmedMemberships,
@@ -100,7 +111,12 @@ async function loadOrg(c: Ctx, orgId: string | undefined): Promise<Organization>
 }
 
 /** Requires a confirmed membership of at least the given logical rank. */
-async function requireMember(c: Ctx, orgId: string, minType: MembershipType): Promise<Membership> {
+async function requireMember(
+  c: Ctx,
+  orgId: string | undefined,
+  minType: MembershipType,
+): Promise<Membership> {
+  if (!orgId) notFound("Organization doesn't exist");
   const { user } = auth(c);
   const member = await findConfirmedMembership(c.get('db'), user.uuid, orgId);
   if (!member) notFound('You are not a member of this organization');
@@ -479,7 +495,7 @@ organizationRoutes.post('/organizations/:orgId/collections', async (c) => {
 });
 
 // Registered before the :colId param routes so the static path wins
-organizationRoutes.post('/organizations/:orgId/collections/bulk-delete', async (c) => {
+async function bulkDeleteCollections(c: Ctx) {
   const { user, device } = auth(c);
   const orgId = c.req.param('orgId');
   await requireMember(c, orgId, MembershipType.Manager);
@@ -498,6 +514,59 @@ organizationRoutes.post('/organizations/:orgId/collections/bulk-delete', async (
       deviceType: device.atype,
       ip: c.get('ip'),
     });
+  }
+  return c.body(null, 200);
+}
+organizationRoutes.post('/organizations/:orgId/collections/bulk-delete', bulkDeleteCollections);
+organizationRoutes.delete('/organizations/:orgId/collections', bulkDeleteCollections);
+
+// Grant access to several collections at once (bulk-access) — web vault
+organizationRoutes.post('/organizations/:orgId/collections/bulk-access', async (c) => {
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Manager);
+  const db = c.get('db');
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const collectionIds = ci<string[]>(body, 'collectionIds') ?? [];
+  const userAssignments = parseAssignments(ci(body, 'users'));
+  const groupAssignments = parseAssignments(ci(body, 'groups'));
+
+  for (const colId of collectionIds) {
+    const col = await db.query.collections.findFirst({ where: eq(collections.uuid, colId) });
+    if (!col || col.orgUuid !== orgId) continue;
+    for (const a of userAssignments) {
+      const target = await db.query.usersOrganizations.findFirst({
+        where: and(eq(usersOrganizations.uuid, a.id), eq(usersOrganizations.orgUuid, orgId)),
+      });
+      if (!target || target.accessAll) continue;
+      await db
+        .insert(usersCollections)
+        .values({
+          userUuid: target.userUuid,
+          collectionUuid: colId,
+          readOnly: a.readOnly,
+          hidePasswords: a.hidePasswords,
+          manage: a.manage,
+        })
+        .onConflictDoUpdate({
+          target: [usersCollections.userUuid, usersCollections.collectionUuid],
+          set: { readOnly: a.readOnly, hidePasswords: a.hidePasswords, manage: a.manage },
+        });
+    }
+    for (const a of groupAssignments) {
+      await db
+        .insert(collectionsGroups)
+        .values({
+          collectionsUuid: colId,
+          groupsUuid: a.id,
+          readOnly: a.readOnly,
+          hidePasswords: a.hidePasswords,
+          manage: a.manage,
+        })
+        .onConflictDoUpdate({
+          target: [collectionsGroups.collectionsUuid, collectionsGroups.groupsUuid],
+          set: { readOnly: a.readOnly, hidePasswords: a.hidePasswords, manage: a.manage },
+        });
+    }
   }
   return c.body(null, 200);
 });
@@ -660,3 +729,165 @@ organizationRoutes.get('/organizations/:orgId/details', async (c) => {
     continuationToken: null,
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plans (static) — the web vault fetches this before org creation
+// ---------------------------------------------------------------------------
+
+organizationRoutes.get('/plans', (c) =>
+  c.json({
+    object: 'list',
+    data: [
+      {
+        object: 'plan',
+        type: 0,
+        product: 0,
+        name: 'Free',
+        nameLocalizationKey: 'planNameFree',
+        bitwardenProduct: 0,
+        maxUsers: 0,
+        descriptionLocalizationKey: 'planDescFree',
+      },
+      {
+        object: 'plan',
+        type: 0,
+        product: 1,
+        name: 'Free',
+        nameLocalizationKey: 'planNameFree',
+        bitwardenProduct: 1,
+        maxUsers: 0,
+        descriptionLocalizationKey: 'planDescFree',
+      },
+    ],
+    continuationToken: null,
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Collection details listing (with per-user access) + org export
+// ---------------------------------------------------------------------------
+
+organizationRoutes.get('/organizations/:orgId/collections/details', async (c) => {
+  const { user } = auth(c);
+  const orgId = c.req.param('orgId');
+  await requireMember(c, orgId, MembershipType.User);
+  const db = c.get('db');
+  const sync = await loadCipherSyncData(db, user.uuid, 'org', orgId!);
+  const rows = await db.select().from(collections).where(eq(collections.orgUuid, orgId!));
+  return c.json({
+    data: rows.map((col) => collectionToJsonDetails(col, user.uuid, sync)),
+    object: 'list',
+    continuationToken: null,
+  });
+});
+
+organizationRoutes.get('/organizations/:orgId/export', async (c) => {
+  const { user } = auth(c);
+  const orgId = c.req.param('orgId');
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const cols = await db.select().from(collections).where(eq(collections.orgUuid, orgId!));
+  const sync = await loadCipherSyncData(db, user.uuid, 'org', orgId!);
+  const cipherRows = await db.select().from(ciphers).where(eq(ciphers.organizationUuid, orgId!));
+  const opts = {
+    config: c.get('config'),
+    secret: c.env.JWT_SECRET,
+    userUuid: user.uuid,
+    sync,
+    syncType: 'org' as const,
+  };
+  return c.json({
+    collections: cols.map(collectionToJson),
+    ciphers: await Promise.all(cipherRows.map((r) => cipherToJson(r, opts))),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Organization API key (directory connector / CLI org login)
+// ---------------------------------------------------------------------------
+
+async function orgApiKey(c: Context<AppEnv>, rotate: boolean) {
+  const { user } = auth(c);
+  const orgId = c.req.param('orgId')!;
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+
+  const passwordHash = ci<string>(body, 'masterPasswordHash');
+  if (passwordHash) {
+    const valid = await verifyPassword(passwordHash, {
+      hash: user.passwordHash,
+      salt: user.salt,
+      iterations: user.passwordIterations,
+    });
+    if (!valid) err('Invalid password');
+  }
+
+  let row = await db.query.organizationApiKey.findFirst({
+    where: and(
+      eq(organizationApiKey.orgUuid, orgId),
+      eq(organizationApiKey.atype, OrganizationApiKeyType.Default),
+    ),
+  });
+  if (!row) {
+    row = {
+      uuid: uuid(),
+      orgUuid: orgId,
+      atype: OrganizationApiKeyType.Default,
+      apiKey: generateApiKey(),
+      revisionDate: nowDb(),
+    };
+    await db.insert(organizationApiKey).values(row);
+  } else if (rotate) {
+    const apiKey = generateApiKey();
+    const revisionDate = nowDb();
+    await db
+      .update(organizationApiKey)
+      .set({ apiKey, revisionDate })
+      .where(and(eq(organizationApiKey.uuid, row.uuid), eq(organizationApiKey.orgUuid, orgId)));
+    row = { ...row, apiKey, revisionDate };
+  }
+
+  return c.json({ apiKey: row.apiKey, revisionDate: toApi(row.revisionDate), object: 'apiKey' });
+}
+organizationRoutes.post('/organizations/:orgId/api-key', (c) => orgApiKey(c, false));
+organizationRoutes.post('/organizations/:orgId/rotate-api-key', (c) => orgApiKey(c, true));
+
+// Bulk public keys for members (used during key rotation / confirm flows)
+organizationRoutes.post('/organizations/:orgId/users/public-keys', async (c) => {
+  const orgId = c.req.param('orgId');
+  await requireMember(c, orgId, MembershipType.Admin);
+  const db = c.get('db');
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const ids = ci<string[]>(body, 'ids') ?? [];
+
+  const data = [];
+  for (const memberId of ids) {
+    const member = await db.query.usersOrganizations.findFirst({
+      where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId!)),
+    });
+    if (!member) continue;
+    const u = await db.query.users.findFirst({ where: eq(users.uuid, member.userUuid) });
+    if (!u) continue;
+    data.push({
+      object: 'organizationUserPublicKeyResponseModel',
+      id: memberId,
+      userId: u.uuid,
+      key: u.publicKey,
+    });
+  }
+  return c.json({ data, object: 'list', continuationToken: null });
+});
+
+// ---------------------------------------------------------------------------
+// Billing stubs — return empty shapes so the web vault doesn't 404/error
+// ---------------------------------------------------------------------------
+
+const emptyList = { object: 'list', data: [], continuationToken: null };
+organizationRoutes.get('/organizations/:orgId/billing/metadata', (c) => c.json(emptyList));
+organizationRoutes.get('/organizations/:orgId/billing/vnext/warnings', (c) =>
+  c.json({ freeTrial: null, inactiveSubscription: null, resellerRenewal: null, taxId: null }),
+);
+organizationRoutes.get('/organizations/:orgId/billing/vnext/self-host/metadata', (c) =>
+  c.json({ isOnSecretsManagerStandalone: false, organizationOccupiedSeats: 0 }),
+);
