@@ -36,9 +36,14 @@ export async function findTwoFactors(db: Db, userUuid: string): Promise<TwoFacto
   return db.query.twofactor.findMany({ where: eq(twofactor.userUuid, userUuid) });
 }
 
+/** Obscures the local part of an email — exact port of vaultwarden obscure_email. */
 export function obscureEmail(email: string): string {
-  const [name = '', domain = ''] = email.split('@');
-  const obscured = name.length <= 2 ? name : `${name.slice(0, 2)}***`;
+  const at = email.lastIndexOf('@');
+  const name = at >= 0 ? email.slice(0, at) : email;
+  const domain = at >= 0 ? email.slice(at + 1) : '';
+  const size = [...name].length;
+  const obscured =
+    size >= 1 && size <= 3 ? '*'.repeat(size) : name.slice(0, 2) + '*'.repeat(size - 2);
   return `${obscured}@${domain}`;
 }
 

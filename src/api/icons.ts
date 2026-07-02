@@ -1,10 +1,14 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { isSafeFetchHost } from '../services/ssrf';
 
 /**
  * Website icon proxy (/icons/:domain/icon.png) with KV caching.
  * Simplified port of vaultwarden src/api/icons.rs — fetches the site's
  * favicon and caches the bytes (positive and negative) in KV.
+ *
+ * Hosts are validated through the SSRF guard (src/services/ssrf.ts) which
+ * rejects non-global IPs in every encoding plus internal hostnames.
  */
 export const iconRoutes = new Hono<AppEnv>();
 
@@ -12,11 +16,7 @@ const MAX_ICON_BYTES = 5 * 1024 * 1024;
 const NEGATIVE_TTL = 24 * 60 * 60;
 
 function isValidDomain(domain: string): boolean {
-  if (!domain || domain.length > 255 || domain.includes('..')) return false;
-  // Reject IPs, localhost, and anything without a dot TLD
-  if (domain === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return false;
-  if (/[^a-z0-9.\-]/i.test(domain)) return false;
-  return /^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain);
+  return isSafeFetchHost(domain);
 }
 
 function extractIconHref(html: string): string | null {
