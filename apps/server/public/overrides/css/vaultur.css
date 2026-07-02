@@ -1,0 +1,11 @@
+/* Vaultur web-vault overrides — loaded on top of the bw_web_builds theme.
+ * Keep changes minimal: branding accents only, no layout surgery. */
+:root {
+  --color-primary-600: 99 91 255; /* Vaultur indigo */
+  --color-primary-700: 82 72 236;
+}
+
+app-root .logo,
+app-frontend-layout .logo {
+  filter: hue-rotate(18deg) saturate(1.15);
+}
