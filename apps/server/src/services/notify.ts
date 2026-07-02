@@ -180,5 +180,10 @@ export class Notify {
         payload: { Id: authRequestUuid, UserId: userUuid },
       }),
     );
+    // The requesting (still unauthenticated) device listens on the anonymous
+    // hub keyed by the auth-request id (vaultwarden's AnonymousNotify).
+    this.ctx.waitUntil(
+      this.broadcast(`anon:${authRequestUuid}`, frame).catch((e) => console.error('anon notify', e)),
+    );
   }
 }
