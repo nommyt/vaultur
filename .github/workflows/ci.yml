@@ -17,5 +17,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm --filter @vaultur/server test
+      - run: pnpm test
+      - run: pnpm build
       - run: pnpm format:check

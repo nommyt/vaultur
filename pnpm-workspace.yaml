@@ -1,8 +1,11 @@
-packages:
-  - apps/*
-  - packages/*
 allowBuilds:
-  core-js-pure: false
-  esbuild: true
-  sharp: true
-  workerd: true
+  core-js-pure: set this to true or false
+  esbuild: set this to true or false
+  sharp: set this to true or false
+  workerd: set this to true or false
+# Single-package repo. This file only carries pnpm build-approval settings;
+# it does not declare any workspace packages.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd

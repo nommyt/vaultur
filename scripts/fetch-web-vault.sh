@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetches the prebuilt Bitwarden web vault (Vaultwarden's patched build, bw_web_builds)
-# into apps/server/public/web-vault so wrangler bundles it as static assets,
+# into public/web-vault so wrangler bundles it as static assets,
 # then applies Vaultur branding overrides.
 #
 # Usage: scripts/fetch-web-vault.sh [version]
@@ -10,8 +10,8 @@ set -euo pipefail
 
 REPO="dani-garcia/bw_web_builds"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$ROOT_DIR/apps/server/public/web-vault"
-OVERRIDES="$ROOT_DIR/apps/server/public/overrides"
+DEST="$ROOT_DIR/public/web-vault"
+OVERRIDES="$ROOT_DIR/public/overrides"
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
@@ -39,4 +39,4 @@ if [[ -d "$OVERRIDES" ]]; then
   cp -R "$OVERRIDES/." "$DEST/"
 fi
 
-echo "Web vault $VERSION installed at apps/server/public/web-vault"
+echo "Web vault $VERSION installed at public/web-vault"
