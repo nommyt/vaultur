@@ -28,8 +28,8 @@ export class NotificationsHub extends DurableObject<Bindings> {
     }
 
     if (url.pathname.endsWith('/publish') && request.method === 'POST') {
-      const payload = (await request.json()) as { data: unknown };
-      const frame = serializeSignalRInvocation(payload.data);
+      // Body is a pre-encoded SignalR MessagePack frame (built in the Worker)
+      const frame = new Uint8Array(await request.arrayBuffer());
       for (const ws of this.ctx.getWebSockets()) {
         try {
           ws.send(frame);
@@ -82,12 +82,3 @@ function withVarintLength(body: Uint8Array): Uint8Array {
 
 /** Type 6 = Ping */
 const PING_FRAME = withVarintLength(encode([6]));
-
-/**
- * Type 1 = Invocation: [1, headers, invocationId, target, [args]]
- * matching vaultwarden's serialize(Value) for "ReceiveMessage".
- */
-export function serializeSignalRInvocation(data: unknown): Uint8Array {
-  const body = encode([1, new Map(), null, 'ReceiveMessage', [data]]);
-  return withVarintLength(body);
-}
