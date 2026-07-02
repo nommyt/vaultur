@@ -56,7 +56,10 @@ describe('org members (mail-disabled auto-accept flow)', () => {
     const ownerToken = await loginUser(ownerEmail);
     const memberToken = await loginUser(memberEmail);
 
-    const org = (await (await api(ownerToken, 'POST', '/api/organizations', ORG)).json()) as Record<string, any>;
+    const org = (await (await api(ownerToken, 'POST', '/api/organizations', ORG)).json()) as Record<
+      string,
+      any
+    >;
 
     // Invite (mail disabled → member auto-accepted, status 1)
     const invite = await api(ownerToken, 'POST', `/api/organizations/${org.id}/users/invite`, {
@@ -77,36 +80,63 @@ describe('org members (mail-disabled auto-accept flow)', () => {
     expect(memberRow.type).toBe(2);
 
     // Confirm with a key → status Confirmed(2)
-    const confirm = await api(ownerToken, 'POST', `/api/organizations/${org.id}/users/${memberRow.id}/confirm`, {
-      key: '2.memberOrgKey|iv==',
-    });
+    const confirm = await api(
+      ownerToken,
+      'POST',
+      `/api/organizations/${org.id}/users/${memberRow.id}/confirm`,
+      {
+        key: '2.memberOrgKey|iv==',
+      },
+    );
     expect(confirm.status).toBe(200);
 
-    users = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)).json()) as Record<string, any>;
+    users = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)
+    ).json()) as Record<string, any>;
     expect(users.data.find((u: any) => u.email === memberEmail).status).toBe(2);
 
     // Member now sees the org in their sync profile
-    const memberSync = (await (await api(memberToken, 'GET', '/api/sync')).json()) as Record<string, any>;
+    const memberSync = (await (await api(memberToken, 'GET', '/api/sync')).json()) as Record<
+      string,
+      any
+    >;
     expect(memberSync.profile.organizations.some((o: any) => o.id === org.id)).toBe(true);
 
     // Promote to Admin
-    const edit = await api(ownerToken, 'PUT', `/api/organizations/${org.id}/users/${memberRow.id}`, {
-      type: 1,
-      accessAll: false,
-      collections: [],
-    });
+    const edit = await api(
+      ownerToken,
+      'PUT',
+      `/api/organizations/${org.id}/users/${memberRow.id}`,
+      {
+        type: 1,
+        accessAll: false,
+        collections: [],
+      },
+    );
     expect(edit.status).toBe(200);
-    users = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)).json()) as Record<string, any>;
+    users = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)
+    ).json()) as Record<string, any>;
     expect(users.data.find((u: any) => u.email === memberEmail).type).toBe(1);
 
     // Revoke → status -1
-    expect((await api(ownerToken, 'PUT', `/api/organizations/${org.id}/users/${memberRow.id}/revoke`)).status).toBe(200);
-    users = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)).json()) as Record<string, any>;
+    expect(
+      (await api(ownerToken, 'PUT', `/api/organizations/${org.id}/users/${memberRow.id}/revoke`))
+        .status,
+    ).toBe(200);
+    users = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)
+    ).json()) as Record<string, any>;
     expect(users.data.find((u: any) => u.email === memberEmail).status).toBe(-1);
 
     // Restore
-    expect((await api(ownerToken, 'PUT', `/api/organizations/${org.id}/users/${memberRow.id}/restore`)).status).toBe(200);
-    users = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)).json()) as Record<string, any>;
+    expect(
+      (await api(ownerToken, 'PUT', `/api/organizations/${org.id}/users/${memberRow.id}/restore`))
+        .status,
+    ).toBe(200);
+    users = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)
+    ).json()) as Record<string, any>;
     expect(users.data.find((u: any) => u.email === memberEmail).status).toBe(2);
   });
 
@@ -114,7 +144,10 @@ describe('org members (mail-disabled auto-accept flow)', () => {
     const ownerEmail = 'gowner@members.test';
     await registerUser(ownerEmail);
     const ownerToken = await loginUser(ownerEmail);
-    const org = (await (await api(ownerToken, 'POST', '/api/organizations', ORG)).json()) as Record<string, any>;
+    const org = (await (await api(ownerToken, 'POST', '/api/organizations', ORG)).json()) as Record<
+      string,
+      any
+    >;
 
     const group = (await (
       await api(ownerToken, 'POST', `/api/organizations/${org.id}/groups`, {
@@ -127,23 +160,29 @@ describe('org members (mail-disabled auto-accept flow)', () => {
     expect(group.object).toBe('group');
     expect(group.name).toBe('Engineers');
 
-    const groups = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/groups`)).json()) as Record<
-      string,
-      any
-    >;
+    const groups = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/groups`)
+    ).json()) as Record<string, any>;
     expect(groups.data.some((g: any) => g.id === group.id)).toBe(true);
 
     // Rename
-    const renamed = await api(ownerToken, 'PUT', `/api/organizations/${org.id}/groups/${group.id}`, {
-      name: 'Platform',
-      accessAll: false,
-      collections: [],
-      users: [],
-    });
+    const renamed = await api(
+      ownerToken,
+      'PUT',
+      `/api/organizations/${org.id}/groups/${group.id}`,
+      {
+        name: 'Platform',
+        accessAll: false,
+        collections: [],
+        users: [],
+      },
+    );
     expect(((await renamed.json()) as Record<string, any>).name).toBe('Platform');
 
     // Delete
-    expect((await api(ownerToken, 'DELETE', `/api/organizations/${org.id}/groups/${group.id}`)).status).toBe(200);
+    expect(
+      (await api(ownerToken, 'DELETE', `/api/organizations/${org.id}/groups/${group.id}`)).status,
+    ).toBe(200);
   });
 
   it('enabling the 2FA policy revokes members without 2FA', async () => {
@@ -152,7 +191,10 @@ describe('org members (mail-disabled auto-accept flow)', () => {
     await registerUser(ownerEmail);
     await registerUser(memberEmail);
     const ownerToken = await loginUser(ownerEmail);
-    const org = (await (await api(ownerToken, 'POST', '/api/organizations', ORG)).json()) as Record<string, any>;
+    const org = (await (await api(ownerToken, 'POST', '/api/organizations', ORG)).json()) as Record<
+      string,
+      any
+    >;
 
     await api(ownerToken, 'POST', `/api/organizations/${org.id}/users/invite`, {
       emails: [memberEmail],
@@ -160,9 +202,13 @@ describe('org members (mail-disabled auto-accept flow)', () => {
       accessAll: false,
       collections: [],
     });
-    let users = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)).json()) as Record<string, any>;
+    let users = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)
+    ).json()) as Record<string, any>;
     const memberRow = users.data.find((u: any) => u.email === memberEmail);
-    await api(ownerToken, 'POST', `/api/organizations/${org.id}/users/${memberRow.id}/confirm`, { key: '2.k|iv==' });
+    await api(ownerToken, 'POST', `/api/organizations/${org.id}/users/${memberRow.id}/confirm`, {
+      key: '2.k|iv==',
+    });
 
     // Enable the Two-Factor Authentication policy (type 0)
     const policy = await api(ownerToken, 'PUT', `/api/organizations/${org.id}/policies/0`, {
@@ -174,26 +220,30 @@ describe('org members (mail-disabled auto-accept flow)', () => {
     expect(((await policy.json()) as Record<string, any>).enabled).toBe(true);
 
     // The 2FA-less member is revoked; the owner (admin) is exempt
-    users = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)).json()) as Record<string, any>;
+    users = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/users`)
+    ).json()) as Record<string, any>;
     expect(users.data.find((u: any) => u.email === memberEmail).status).toBe(-1);
     expect(users.data.find((u: any) => u.email === ownerEmail).status).toBe(2);
 
     // Policy list reflects it
-    const policies = (await (await api(ownerToken, 'GET', `/api/organizations/${org.id}/policies`)).json()) as Record<
-      string,
-      any
-    >;
+    const policies = (await (
+      await api(ownerToken, 'GET', `/api/organizations/${org.id}/policies`)
+    ).json()) as Record<string, any>;
     expect(policies.data.find((p: any) => p.type === 0).enabled).toBe(true);
   });
 
-  it('prevents a member from reading another org\'s users', async () => {
+  it("prevents a member from reading another org's users", async () => {
     const aEmail = 'a-iso@members.test';
     const bEmail = 'b-iso@members.test';
     await registerUser(aEmail);
     await registerUser(bEmail);
     const aToken = await loginUser(aEmail);
     const bToken = await loginUser(bEmail);
-    const orgA = (await (await api(aToken, 'POST', '/api/organizations', ORG)).json()) as Record<string, any>;
+    const orgA = (await (await api(aToken, 'POST', '/api/organizations', ORG)).json()) as Record<
+      string,
+      any
+    >;
 
     // B is not a member of orgA → forbidden
     const res = await api(bToken, 'GET', `/api/organizations/${orgA.id}/users`);

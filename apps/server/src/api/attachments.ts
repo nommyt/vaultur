@@ -8,7 +8,12 @@ import { requireAuth, auth } from '../auth/middleware';
 import { err, notFound } from '../error';
 import { decodeJwt, issuer } from '../auth/jwt';
 import { randomAlphanum, ci } from '../util';
-import { attachmentToJson, cipherToJson, getAccessRestrictions, loadCipherSyncData } from '../services/vault';
+import {
+  attachmentToJson,
+  cipherToJson,
+  getAccessRestrictions,
+  loadCipherSyncData,
+} from '../services/vault';
 import { updateUsersRevisionForCipher, usersWithCipherAccess } from '../services/ciphers';
 import { Notify } from '../services/notify';
 
@@ -89,11 +94,23 @@ attachmentRoutes.post('/ciphers/:id/attachment/v2', async (c) => {
   if (!Number.isFinite(fileSize) || fileSize < 0) err("Attachment size can't be negative");
 
   const attachmentId = randomAlphanum(10).toLowerCase();
-  const attachment: Attachment = { id: attachmentId, cipherUuid: cipher.uuid, fileName, fileSize, akey: key };
+  const attachment: Attachment = {
+    id: attachmentId,
+    cipherUuid: cipher.uuid,
+    fileName,
+    fileSize,
+    akey: key,
+  };
   await db.insert(attachments).values(attachment);
 
   const sync = await loadCipherSyncData(db, user.uuid, 'user');
-  const opts = { config: c.get('config'), secret: c.env.JWT_SECRET, userUuid: user.uuid, sync, syncType: 'user' as const };
+  const opts = {
+    config: c.get('config'),
+    secret: c.env.JWT_SECRET,
+    userUuid: user.uuid,
+    sync,
+    syncType: 'user' as const,
+  };
 
   return c.json({
     object: 'attachment-fileUpload',
@@ -111,9 +128,11 @@ attachmentRoutes.post('/ciphers/:id/attachment/:attachmentId', async (c) => {
   const cipher = await loadWritableCipher(c, c.req.param('id'));
   const attachmentId = c.req.param('attachmentId');
 
-  const attachment = await db.query.attachments.findFirst({ where: eq(attachments.id, attachmentId) });
+  const attachment = await db.query.attachments.findFirst({
+    where: eq(attachments.id, attachmentId),
+  });
   if (!attachment || attachment.cipherUuid !== cipher.uuid) {
-    err('Attachment doesn\'t exist');
+    err("Attachment doesn't exist");
   }
 
   const form = await c.req.parseBody();
@@ -122,7 +141,9 @@ attachmentRoutes.post('/ciphers/:id/attachment/:attachmentId', async (c) => {
 
   if (Math.abs(attachment.fileSize - file.size) > 1) {
     // vaultwarden tolerates ±1 byte (leeway for encryption overhead reporting)
-    err(`Attachment size mismatch (expected within [${attachment.fileSize - 1}, ${attachment.fileSize + 1}], got ${file.size})`);
+    err(
+      `Attachment size mismatch (expected within [${attachment.fileSize - 1}, ${attachment.fileSize + 1}], got ${file.size})`,
+    );
   }
 
   await c.env.FILES.put(fileKey(cipher.uuid, attachmentId), file.stream(), {
@@ -172,7 +193,13 @@ async function legacyUpload(c: Ctx) {
   );
 
   const sync = await loadCipherSyncData(db, user.uuid, 'user');
-  const opts = { config: c.get('config'), secret: c.env.JWT_SECRET, userUuid: user.uuid, sync, syncType: 'user' as const };
+  const opts = {
+    config: c.get('config'),
+    secret: c.env.JWT_SECRET,
+    userUuid: user.uuid,
+    sync,
+    syncType: 'user' as const,
+  };
   return c.json(await cipherToJson(cipher, opts));
 }
 attachmentRoutes.post('/ciphers/:id/attachment', legacyUpload);
@@ -190,7 +217,9 @@ attachmentRoutes.get('/ciphers/:id/attachment/:attachmentId', async (c) => {
   const sync = await loadCipherSyncData(db, user.uuid, 'user');
   if (!getAccessRestrictions(cipher, user.uuid, sync)) notFound('Cipher is not accessible');
 
-  const attachment = await db.query.attachments.findFirst({ where: eq(attachments.id, attachmentId) });
+  const attachment = await db.query.attachments.findFirst({
+    where: eq(attachments.id, attachmentId),
+  });
   if (!attachment || attachment.cipherUuid !== cipher.uuid) notFound("Attachment doesn't exist");
 
   return c.json(await attachmentToJson(c.get('config'), c.env.JWT_SECRET, attachment));
@@ -204,7 +233,9 @@ async function deleteAttachment(c: Ctx) {
   const attachmentId = c.req.param('attachmentId');
   if (!attachmentId) notFound("Attachment doesn't exist");
 
-  const attachment = await db.query.attachments.findFirst({ where: eq(attachments.id, attachmentId) });
+  const attachment = await db.query.attachments.findFirst({
+    where: eq(attachments.id, attachmentId),
+  });
   if (!attachment || attachment.cipherUuid !== cipher.uuid) notFound("Attachment doesn't exist");
 
   await c.env.FILES.delete(fileKey(cipher.uuid, attachmentId));
@@ -217,7 +248,10 @@ async function deleteAttachment(c: Ctx) {
     affected,
     device.uuid,
   );
-  return c.json({ object: 'attachment', ...(await attachmentToJson(c.get('config'), c.env.JWT_SECRET, attachment)) });
+  return c.json({
+    object: 'attachment',
+    ...(await attachmentToJson(c.get('config'), c.env.JWT_SECRET, attachment)),
+  });
 }
 attachmentRoutes.delete('/ciphers/:id/attachment/:attachmentId', deleteAttachment);
 attachmentRoutes.post('/ciphers/:id/attachment/:attachmentId/delete', deleteAttachment);

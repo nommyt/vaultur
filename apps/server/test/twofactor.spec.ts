@@ -35,7 +35,9 @@ describe('two-factor (authenticator)', () => {
     expect(((await enableRes.json()) as { enabled: boolean }).enabled).toBe(true);
 
     // Listed as an enabled provider
-    const list = (await (await api(token, 'GET', '/api/two-factor')).json()) as { data: { type: number }[] };
+    const list = (await (await api(token, 'GET', '/api/two-factor')).json()) as {
+      data: { type: number }[];
+    };
     expect(list.data.some((p) => p.type === 0)).toBe(true);
 
     // Login now demands 2FA
@@ -55,7 +57,9 @@ describe('two-factor (authenticator)', () => {
 
     // A recovery code now exists
     const recover = (await (
-      await api(newToken, 'POST', '/api/two-factor/get-recover', { masterPasswordHash: TEST_USER.masterPasswordHash })
+      await api(newToken, 'POST', '/api/two-factor/get-recover', {
+        masterPasswordHash: TEST_USER.masterPasswordHash,
+      })
     ).json()) as { code: string };
     expect(recover.code).toBeTruthy();
 
@@ -74,7 +78,9 @@ describe('two-factor (authenticator)', () => {
     const session = await registerAndLogin();
     const token = session.access_token;
     const { key } = (await (
-      await api(token, 'POST', '/api/two-factor/get-authenticator', { masterPasswordHash: TEST_USER.masterPasswordHash })
+      await api(token, 'POST', '/api/two-factor/get-authenticator', {
+        masterPasswordHash: TEST_USER.masterPasswordHash,
+      })
     ).json()) as { key: string };
 
     const res = await api(token, 'POST', '/api/two-factor/authenticator', {
@@ -91,7 +97,9 @@ describe('two-factor (authenticator)', () => {
     const session = await registerAndLogin();
     const token = session.access_token;
     const { key } = (await (
-      await api(token, 'POST', '/api/two-factor/get-authenticator', { masterPasswordHash: TEST_USER.masterPasswordHash })
+      await api(token, 'POST', '/api/two-factor/get-authenticator', {
+        masterPasswordHash: TEST_USER.masterPasswordHash,
+      })
     ).json()) as { key: string };
     await api(token, 'POST', '/api/two-factor/authenticator', {
       masterPasswordHash: TEST_USER.masterPasswordHash,
@@ -99,7 +107,9 @@ describe('two-factor (authenticator)', () => {
       token: totpFor(key),
     });
     const recover = (await (
-      await api(token, 'POST', '/api/two-factor/get-recover', { masterPasswordHash: TEST_USER.masterPasswordHash })
+      await api(token, 'POST', '/api/two-factor/get-recover', {
+        masterPasswordHash: TEST_USER.masterPasswordHash,
+      })
     ).json()) as { code: string };
 
     const res = await SELF.fetch('https://vault.test/api/two-factor/recover', {

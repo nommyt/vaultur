@@ -34,11 +34,21 @@ folderRoutes.post('/folders', async (c) => {
 
   const db = c.get('db');
   const now = nowDb();
-  const folder: Folder = { uuid: uuid(), createdAt: now, updatedAt: now, userUuid: user.uuid, name };
+  const folder: Folder = {
+    uuid: uuid(),
+    createdAt: now,
+    updatedAt: now,
+    userUuid: user.uuid,
+    name,
+  };
   await db.insert(folders).values(folder);
   await touchUser(db, user.uuid);
 
-  new Notify(c.env, c.get('config'), c.executionCtx).folderUpdate(UpdateType.SyncFolderCreate, folder, device.uuid);
+  new Notify(c.env, c.get('config'), c.executionCtx).folderUpdate(
+    UpdateType.SyncFolderCreate,
+    folder,
+    device.uuid,
+  );
   return c.json(folderToJson(folder));
 });
 
@@ -51,10 +61,17 @@ async function updateFolder(c: Context<AppEnv>) {
   const db = c.get('db');
   const row = await findFolder(c, user.uuid, c.req.param('id'));
   const updated: Folder = { ...row, name, updatedAt: nowDb() };
-  await db.update(folders).set({ name, updatedAt: updated.updatedAt }).where(eq(folders.uuid, row.uuid));
+  await db
+    .update(folders)
+    .set({ name, updatedAt: updated.updatedAt })
+    .where(eq(folders.uuid, row.uuid));
   await touchUser(db, user.uuid);
 
-  new Notify(c.env, c.get('config'), c.executionCtx).folderUpdate(UpdateType.SyncFolderUpdate, updated, device.uuid);
+  new Notify(c.env, c.get('config'), c.executionCtx).folderUpdate(
+    UpdateType.SyncFolderUpdate,
+    updated,
+    device.uuid,
+  );
   return c.json(folderToJson(updated));
 }
 
@@ -71,14 +88,22 @@ async function deleteFolder(c: Context<AppEnv>) {
   await db.delete(folders).where(eq(folders.uuid, row.uuid));
   await touchUser(db, user.uuid);
 
-  new Notify(c.env, c.get('config'), c.executionCtx).folderUpdate(UpdateType.SyncFolderDelete, row, device.uuid);
+  new Notify(c.env, c.get('config'), c.executionCtx).folderUpdate(
+    UpdateType.SyncFolderDelete,
+    row,
+    device.uuid,
+  );
   return c.body(null, 200);
 }
 
 folderRoutes.delete('/folders/:id', (c) => deleteFolder(c));
 folderRoutes.post('/folders/:id/delete', (c) => deleteFolder(c));
 
-async function findFolder(c: Context<AppEnv>, userUuid: string, id: string | undefined): Promise<Folder> {
+async function findFolder(
+  c: Context<AppEnv>,
+  userUuid: string,
+  id: string | undefined,
+): Promise<Folder> {
   if (!id) notFound('Folder not found');
   const row = await c.get('db').query.folders.findFirst({
     where: and(eq(folders.uuid, id), eq(folders.userUuid, userUuid)),

@@ -55,7 +55,11 @@ export function errCode(message: string, status: ApiError['status']): never {
 }
 
 /** Identity endpoint OAuth2-style error — vaultwarden's `err_json!()`. */
-export function errJson(body: Record<string, unknown>, message = 'error', status: ApiError['status'] = 400): never {
+export function errJson(
+  body: Record<string, unknown>,
+  message = 'error',
+  status: ApiError['status'] = 400,
+): never {
   throw new ApiError(message, status, body);
 }
 

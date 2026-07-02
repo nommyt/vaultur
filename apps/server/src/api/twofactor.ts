@@ -44,7 +44,11 @@ async function verifyUserPassword(user: User, passwordHash: string): Promise<boo
 }
 
 /** PasswordOrOtp guard (vaultwarden PasswordOrOtpData::validate). */
-async function validatePasswordOrOtp(c: Ctx, user: User, body: Record<string, unknown>): Promise<void> {
+async function validatePasswordOrOtp(
+  c: Ctx,
+  user: User,
+  body: Record<string, unknown>,
+): Promise<void> {
   const passwordHash = ci<string>(body, 'masterPasswordHash');
   const otp = ci<string>(body, 'otp');
   if (passwordHash) {
@@ -100,7 +104,9 @@ twofactorRoutes.post('/two-factor/recover', async (c) => {
   const body = (await c.req.json()) as Record<string, unknown>;
   const email = normalizeEmail(String(ci(body, 'email') ?? ''));
   const passwordHash = ci<string>(body, 'masterPasswordHash');
-  const recoveryCode = String(ci(body, 'recoveryCode') ?? '').replace(/\s/g, '').toLowerCase();
+  const recoveryCode = String(ci(body, 'recoveryCode') ?? '')
+    .replace(/\s/g, '')
+    .toLowerCase();
   if (!email || !passwordHash || !recoveryCode) err('Missing required fields');
 
   const db = c.get('db');
@@ -113,7 +119,10 @@ twofactorRoutes.post('/two-factor/recover', async (c) => {
   }
 
   await db.delete(twofactor).where(eq(twofactor.userUuid, user.uuid));
-  await db.update(users).set({ totpRecover: null, updatedAt: nowDb() }).where(eq(users.uuid, user.uuid));
+  await db
+    .update(users)
+    .set({ totpRecover: null, updatedAt: nowDb() })
+    .where(eq(users.uuid, user.uuid));
   await clearTwofactorRemember(db, user.uuid);
   await logUserEvent(db, EventType.UserRecovered2fa, user.uuid, 14, c.get('ip'));
   return c.json({});
@@ -175,7 +184,9 @@ async function activateAuthenticator(c: Ctx) {
 
   await db
     .delete(twofactor)
-    .where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Authenticator)));
+    .where(
+      and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Authenticator)),
+    );
   await db.insert(twofactor).values({
     uuid: uuid(),
     userUuid: user.uuid,
@@ -202,7 +213,9 @@ twofactorRoutes.delete('/two-factor/authenticator', async (c) => {
   await validatePasswordOrOtp(c, user, body);
   await db
     .delete(twofactor)
-    .where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Authenticator)));
+    .where(
+      and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Authenticator)),
+    );
   await clearTwofactorRemember(db, user.uuid);
   await logUserEvent(db, EventType.UserDisabled2fa, user.uuid, device.atype, c.get('ip'));
   return c.json({ enabled: false, type: TwoFactorType.Authenticator, object: 'twoFactorProvider' });
@@ -217,7 +230,9 @@ async function disableTwofactor(c: Ctx) {
   await validatePasswordOrOtp(c, user, body);
   const type = Number(ci(body, 'type') ?? -1);
 
-  await db.delete(twofactor).where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, type)));
+  await db
+    .delete(twofactor)
+    .where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, type)));
   await clearTwofactorRemember(db, user.uuid);
   await logUserEvent(db, EventType.UserDisabled2fa, user.uuid, device.atype, c.get('ip'));
 
@@ -246,7 +261,11 @@ twofactorRoutes.post('/two-factor/get-email', async (c) => {
   if (row) {
     email = (JSON.parse(row.data) as EmailTokenData).email;
   }
-  return c.json({ email: email ?? user.email, enabled: Boolean(row?.enabled), object: 'twoFactorEmail' });
+  return c.json({
+    email: email ?? user.email,
+    enabled: Boolean(row?.enabled),
+    object: 'twoFactorEmail',
+  });
 });
 
 // Setup: store a pending (disabled) email 2FA row and send the code
@@ -261,7 +280,8 @@ twofactorRoutes.post('/two-factor/send-email', async (c) => {
   if (!email) err('Email is required');
 
   const mailer = createMailer(c.env.EMAIL, config);
-  if (!mailer.enabled) err('Email is disabled for this server. Two-factor email cannot be enabled.');
+  if (!mailer.enabled)
+    err('Email is disabled for this server. Two-factor email cannot be enabled.');
 
   const token = randomNumericCode(6);
   const data: EmailTokenData = { email, last_token: token, token_sent: nowDb(), attempts: 0 };

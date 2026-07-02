@@ -26,7 +26,12 @@ import { basicClaims, decodeJwt, encodeJwt, issuer } from '../auth/jwt';
 import { ci, normalizeEmail, uuid } from '../util';
 import { findUserByEmail, newUserShell } from '../services/users';
 import { createMailer, mail } from '../services/mail';
-import { findConfirmedMembership, hasFullAccess, isAtLeast, membershipRank } from '../services/memberships';
+import {
+  findConfirmedMembership,
+  hasFullAccess,
+  isAtLeast,
+  membershipRank,
+} from '../services/memberships';
 import { policyToJson } from '../services/vault';
 import { logOrgEvent } from '../services/events';
 
@@ -48,7 +53,11 @@ interface InviteClaims {
   [k: string]: unknown;
 }
 
-async function requireMember(c: Ctx, orgId: string | undefined, minType: MembershipType): Promise<Membership> {
+async function requireMember(
+  c: Ctx,
+  orgId: string | undefined,
+  minType: MembershipType,
+): Promise<Membership> {
   if (!orgId) notFound("Organization doesn't exist");
   const { user } = auth(c);
   const member = await findConfirmedMembership(c.get('db'), user.uuid, orgId);
@@ -98,7 +107,14 @@ function wireType(m: Membership): number {
 function parseMemberType(value: unknown): number {
   const n = Number(value ?? MembershipType.User);
   if (n === 4) return MembershipType.Manager;
-  if (![MembershipType.Owner, MembershipType.Admin, MembershipType.User, MembershipType.Manager].includes(n)) {
+  if (
+    ![
+      MembershipType.Owner,
+      MembershipType.Admin,
+      MembershipType.User,
+      MembershipType.Manager,
+    ].includes(n)
+  ) {
     err('Invalid membership type');
   }
   return n;
@@ -114,9 +130,9 @@ async function membershipUserDetailsJson(
   const tf = await db.query.twofactor.findFirst({ where: eq(twofactor.userUuid, m.userUuid) });
 
   const groupIds = opts.includeGroups
-    ? (await db.select().from(groupsUsers).where(eq(groupsUsers.usersOrganizationsUuid, m.uuid))).map(
-        (g) => g.groupsUuid,
-      )
+    ? (
+        await db.select().from(groupsUsers).where(eq(groupsUsers.usersOrganizationsUuid, m.uuid))
+      ).map((g) => g.groupsUuid)
     : [];
 
   let collectionsJson: Record<string, unknown>[] = [];
@@ -183,20 +199,33 @@ async function membershipUserDetailsJson(
   };
 }
 
-async function replaceMemberCollections(db: Db, m: Membership, assignments: CollectionAssignment[]): Promise<void> {
+async function replaceMemberCollections(
+  db: Db,
+  m: Membership,
+  assignments: CollectionAssignment[],
+): Promise<void> {
   const orgCollections = new Set(
-    (await db.select({ uuid: collections.uuid }).from(collections).where(eq(collections.orgUuid, m.orgUuid))).map(
-      (r) => r.uuid,
-    ),
+    (
+      await db
+        .select({ uuid: collections.uuid })
+        .from(collections)
+        .where(eq(collections.orgUuid, m.orgUuid))
+    ).map((r) => r.uuid),
   );
   // Remove existing org-scoped assignments for this user
-  const existing = await db.select().from(usersCollections).where(eq(usersCollections.userUuid, m.userUuid));
+  const existing = await db
+    .select()
+    .from(usersCollections)
+    .where(eq(usersCollections.userUuid, m.userUuid));
   for (const row of existing) {
     if (orgCollections.has(row.collectionUuid)) {
       await db
         .delete(usersCollections)
         .where(
-          and(eq(usersCollections.userUuid, m.userUuid), eq(usersCollections.collectionUuid, row.collectionUuid)),
+          and(
+            eq(usersCollections.userUuid, m.userUuid),
+            eq(usersCollections.collectionUuid, row.collectionUuid),
+          ),
         );
     }
   }
@@ -217,7 +246,10 @@ async function replaceMemberGroups(db: Db, m: Membership, groupIds: string[]): P
   for (const gid of groupIds) {
     const group = await db.query.groups.findFirst({ where: eq(groups.uuid, gid) });
     if (!group || group.organizationsUuid !== m.orgUuid) continue;
-    await db.insert(groupsUsers).values({ groupsUuid: gid, usersOrganizationsUuid: m.uuid }).onConflictDoNothing();
+    await db
+      .insert(groupsUsers)
+      .values({ groupsUuid: gid, usersOrganizationsUuid: m.uuid })
+      .onConflictDoNothing();
   }
 }
 
@@ -231,12 +263,18 @@ orgMemberRoutes.get('/organizations/:orgId/policies/token', async (c) => {
   const config = c.get('config');
   let claims: InviteClaims;
   try {
-    claims = await decodeJwt<InviteClaims>(c.env.JWT_SECRET, token, issuer(config.domain, 'invite'));
+    claims = await decodeJwt<InviteClaims>(
+      c.env.JWT_SECRET,
+      token,
+      issuer(config.domain, 'invite'),
+    );
   } catch {
     err('Invalid token');
   }
   if (claims.org_id !== orgId) err('Token not valid for this organization');
-  const rows = await c.get('db').query.orgPolicies.findMany({ where: eq(orgPolicies.orgUuid, orgId) });
+  const rows = await c
+    .get('db')
+    .query.orgPolicies.findMany({ where: eq(orgPolicies.orgUuid, orgId) });
   return c.json({ data: rows.map(policyToJson), object: 'list', continuationToken: null });
 });
 
@@ -253,7 +291,9 @@ orgMemberRoutes.get('/organizations/:orgId/users', async (c) => {
   const includeCollections = c.req.query('includeCollections') === 'true';
   const includeGroups = c.req.query('includeGroups') === 'true';
 
-  const members = await db.query.usersOrganizations.findMany({ where: eq(usersOrganizations.orgUuid, orgId!) });
+  const members = await db.query.usersOrganizations.findMany({
+    where: eq(usersOrganizations.orgUuid, orgId!),
+  });
   const data = await Promise.all(
     members.map((m) => membershipUserDetailsJson(db, m, { includeCollections, includeGroups })),
   );
@@ -264,7 +304,9 @@ orgMemberRoutes.get('/organizations/:orgId/users/mini-details', async (c) => {
   const orgId = c.req.param('orgId');
   await requireMember(c, orgId, MembershipType.User);
   const db = c.get('db');
-  const members = await db.query.usersOrganizations.findMany({ where: eq(usersOrganizations.orgUuid, orgId!) });
+  const members = await db.query.usersOrganizations.findMany({
+    where: eq(usersOrganizations.orgUuid, orgId!),
+  });
   const data = await Promise.all(
     members.map(async (m) => {
       const user = (await db.query.users.findFirst({ where: eq(users.uuid, m.userUuid) }))!;
@@ -308,7 +350,11 @@ orgMemberRoutes.post('/organizations/:orgId/users/invite', async (c) => {
     let userCreated = false;
     if (!user) {
       if (!config.invitationsAllowed) err(`User does not exist: ${email}`);
-      if (!config.signupsAllowed && config.signupsDomainsWhitelist.length === 0 && !mailer.enabled) {
+      if (
+        !config.signupsAllowed &&
+        config.signupsDomainsWhitelist.length === 0 &&
+        !mailer.enabled
+      ) {
         // Invitation table lets restricted-signup servers accept invited users
       }
       const shell = newUserShell(email, null);
@@ -320,7 +366,10 @@ orgMemberRoutes.post('/organizations/:orgId/users/invite', async (c) => {
       }
     } else {
       const existing = await db.query.usersOrganizations.findFirst({
-        where: and(eq(usersOrganizations.userUuid, user.uuid), eq(usersOrganizations.orgUuid, orgId)),
+        where: and(
+          eq(usersOrganizations.userUuid, user.uuid),
+          eq(usersOrganizations.orgUuid, orgId),
+        ),
       });
       if (existing) err(`User already in organization: ${email}`);
     }
@@ -353,11 +402,25 @@ orgMemberRoutes.post('/organizations/:orgId/users/invite', async (c) => {
           kind: 'invite',
           sub: user.uuid,
           ttlSeconds: 5 * 24 * 3600,
-          extra: { email, member_id: membership.uuid, org_id: orgId, invited_by_email: inviter.email },
+          extra: {
+            email,
+            member_id: membership.uuid,
+            org_id: orgId,
+            invited_by_email: inviter.email,
+          },
         }),
       );
       c.executionCtx.waitUntil(
-        mail.orgInvite(mailer, config, email, org.name, orgId, membership.uuid, token, !userCreated && Boolean(user.privateKey)),
+        mail.orgInvite(
+          mailer,
+          config,
+          email,
+          org.name,
+          orgId,
+          membership.uuid,
+          token,
+          !userCreated && Boolean(user.privateKey),
+        ),
       );
     }
 
@@ -383,8 +446,9 @@ async function reinviteMember(c: Ctx, orgId: string, memberId: string): Promise<
   const membership = await db.query.usersOrganizations.findFirst({
     where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId)),
   });
-  if (!membership) err('The user hasn\'t been invited to the organization.');
-  if (membership.status !== MembershipStatus.Invited) err('The user is already accepted or confirmed to the organization');
+  if (!membership) err("The user hasn't been invited to the organization.");
+  if (membership.status !== MembershipStatus.Invited)
+    err('The user is already accepted or confirmed to the organization');
 
   const target = (await db.query.users.findFirst({ where: eq(users.uuid, membership.userUuid) }))!;
   const org = (await db.query.organizations.findFirst({ where: eq(organizations.uuid, orgId) }))!;
@@ -397,10 +461,24 @@ async function reinviteMember(c: Ctx, orgId: string, memberId: string): Promise<
         kind: 'invite',
         sub: target.uuid,
         ttlSeconds: 5 * 24 * 3600,
-        extra: { email: target.email, member_id: membership.uuid, org_id: orgId, invited_by_email: inviter.email },
+        extra: {
+          email: target.email,
+          member_id: membership.uuid,
+          org_id: orgId,
+          invited_by_email: inviter.email,
+        },
       }),
     );
-    await mail.orgInvite(mailer, config, target.email, org.name, orgId, membership.uuid, token, Boolean(target.privateKey));
+    await mail.orgInvite(
+      mailer,
+      config,
+      target.email,
+      org.name,
+      orgId,
+      membership.uuid,
+      token,
+      Boolean(target.privateKey),
+    );
   } else {
     await db.insert(invitations).values({ email: target.email }).onConflictDoNothing();
   }
@@ -451,15 +529,21 @@ orgMemberRoutes.post('/organizations/:orgId/users/:memberId/accept', async (c) =
     if (!token) err('Invite token not provided');
     let claims: InviteClaims;
     try {
-      claims = await decodeJwt<InviteClaims>(c.env.JWT_SECRET, token, issuer(config.domain, 'invite'));
+      claims = await decodeJwt<InviteClaims>(
+        c.env.JWT_SECRET,
+        token,
+        issuer(config.domain, 'invite'),
+      );
     } catch {
       err('Invalid invite token');
     }
-    if (claims.member_id !== memberId || claims.email !== user.email) err('Invitation does not match');
+    if (claims.member_id !== memberId || claims.email !== user.email)
+      err('Invitation does not match');
   }
 
   // 2FA policy: users without 2FA can't join orgs that require it
-  const tfCount = (await db.query.twofactor.findMany({ where: eq(twofactor.userUuid, user.uuid) })).length;
+  const tfCount = (await db.query.twofactor.findMany({ where: eq(twofactor.userUuid, user.uuid) }))
+    .length;
   if (tfCount === 0) {
     const policy = await db.query.orgPolicies.findFirst({
       where: and(
@@ -475,14 +559,20 @@ orgMemberRoutes.post('/organizations/:orgId/users/:memberId/accept', async (c) =
 
   // Single-org policy of the target org
   const singleOrg = await db.query.orgPolicies.findFirst({
-    where: and(eq(orgPolicies.orgUuid, orgId), eq(orgPolicies.atype, OrgPolicyType.SingleOrg), eq(orgPolicies.enabled, true)),
+    where: and(
+      eq(orgPolicies.orgUuid, orgId),
+      eq(orgPolicies.atype, OrgPolicyType.SingleOrg),
+      eq(orgPolicies.enabled, true),
+    ),
   });
   if (singleOrg && !isAtLeast(membership.atype, MembershipType.Admin)) {
     const others = await db.query.usersOrganizations.findMany({
       where: eq(usersOrganizations.userUuid, user.uuid),
     });
     if (others.some((m) => m.orgUuid !== orgId && m.status >= MembershipStatus.Accepted)) {
-      err('You cannot join this organization because you are a member of another organization which forbids it');
+      err(
+        'You cannot join this organization because you are a member of another organization which forbids it',
+      );
     }
   }
 
@@ -493,7 +583,9 @@ orgMemberRoutes.post('/organizations/:orgId/users/:memberId/accept', async (c) =
 
   if (mailer.enabled && membership.invitedByEmail) {
     const org = (await db.query.organizations.findFirst({ where: eq(organizations.uuid, orgId) }))!;
-    c.executionCtx.waitUntil(mail.inviteAccepted(mailer, config, membership.invitedByEmail, user.email, org.name));
+    c.executionCtx.waitUntil(
+      mail.inviteAccepted(mailer, config, membership.invitedByEmail, user.email, org.name),
+    );
   }
 
   return c.body(null, 200);
@@ -507,11 +599,13 @@ async function confirmMember(c: Ctx, orgId: string, memberId: string, key: strin
   const membership = await db.query.usersOrganizations.findFirst({
     where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId)),
   });
-  if (!membership) err('The specified user isn\'t a member of the organization');
-  if (membership.status !== MembershipStatus.Accepted) err('The specified user isn\'t in an Accepted state');
+  if (!membership) err("The specified user isn't a member of the organization");
+  if (membership.status !== MembershipStatus.Accepted)
+    err("The specified user isn't in an Accepted state");
   if (membership.atype === MembershipType.Owner) {
     const actorMember = await findConfirmedMembership(db, actor.uuid, orgId);
-    if (!actorMember || actorMember.atype !== MembershipType.Owner) err('Only Owners can confirm Owners');
+    if (!actorMember || actorMember.atype !== MembershipType.Owner)
+      err('Only Owners can confirm Owners');
   }
 
   await db
@@ -521,7 +615,9 @@ async function confirmMember(c: Ctx, orgId: string, memberId: string, key: strin
 
   const mailer = createMailer(c.env.EMAIL, config);
   if (mailer.enabled) {
-    const target = (await db.query.users.findFirst({ where: eq(users.uuid, membership.userUuid) }))!;
+    const target = (await db.query.users.findFirst({
+      where: eq(users.uuid, membership.userUuid),
+    }))!;
     const org = (await db.query.organizations.findFirst({ where: eq(organizations.uuid, orgId) }))!;
     await mail.inviteConfirmed(mailer, config, target.email, org.name);
   }
@@ -591,10 +687,18 @@ orgMemberRoutes.get('/organizations/:orgId/users/:memberId', async (c) => {
   await requireMember(c, orgId, MembershipType.Manager);
   const db = c.get('db');
   const membership = await db.query.usersOrganizations.findFirst({
-    where: and(eq(usersOrganizations.uuid, c.req.param('memberId')!), eq(usersOrganizations.orgUuid, orgId!)),
+    where: and(
+      eq(usersOrganizations.uuid, c.req.param('memberId')!),
+      eq(usersOrganizations.orgUuid, orgId!),
+    ),
   });
-  if (!membership) err('The specified user isn\'t a member of the organization');
-  return c.json(await membershipUserDetailsJson(db, membership, { includeCollections: true, includeGroups: true }));
+  if (!membership) err("The specified user isn't a member of the organization");
+  return c.json(
+    await membershipUserDetailsJson(db, membership, {
+      includeCollections: true,
+      includeGroups: true,
+    }),
+  );
 });
 
 async function editMember(c: Ctx) {
@@ -605,9 +709,12 @@ async function editMember(c: Ctx) {
   const body = (await c.req.json()) as Record<string, unknown>;
 
   const membership = await db.query.usersOrganizations.findFirst({
-    where: and(eq(usersOrganizations.uuid, c.req.param('memberId')!), eq(usersOrganizations.orgUuid, orgId)),
+    where: and(
+      eq(usersOrganizations.uuid, c.req.param('memberId')!),
+      eq(usersOrganizations.orgUuid, orgId),
+    ),
   });
-  if (!membership) err('The specified user isn\'t a member of the organization');
+  if (!membership) err("The specified user isn't a member of the organization");
 
   const newType = parseMemberType(ci(body, 'type'));
   const accessAll = Boolean(ci(body, 'accessAll'));
@@ -626,7 +733,7 @@ async function editMember(c: Ctx) {
     membership.status === MembershipStatus.Confirmed &&
     (await confirmedOwnerCount(db, orgId)) <= 1
   ) {
-    err('Can\'t delete the last owner');
+    err("Can't delete the last owner");
   }
 
   await db
@@ -663,11 +770,15 @@ async function removeMember(c: Ctx, orgId: string, memberId: string): Promise<vo
   const membership = await db.query.usersOrganizations.findFirst({
     where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId)),
   });
-  if (!membership) err('User to delete isn\'t member of the organization');
+  if (!membership) err("User to delete isn't member of the organization");
   if (membership.atype === MembershipType.Owner) {
-    if (actorMember?.atype !== MembershipType.Owner) err('Only Owners can delete Admins and Owners');
-    if (membership.status === MembershipStatus.Confirmed && (await confirmedOwnerCount(db, orgId)) <= 1) {
-      err('Can\'t delete the last owner');
+    if (actorMember?.atype !== MembershipType.Owner)
+      err('Only Owners can delete Admins and Owners');
+    if (
+      membership.status === MembershipStatus.Confirmed &&
+      (await confirmedOwnerCount(db, orgId)) <= 1
+    ) {
+      err("Can't delete the last owner");
     }
   }
 
@@ -720,13 +831,16 @@ async function setRevoked(c: Ctx, orgId: string, memberId: string, revoke: boole
   const membership = await db.query.usersOrganizations.findFirst({
     where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId)),
   });
-  if (!membership) err('User isn\'t member of the organization');
+  if (!membership) err("User isn't member of the organization");
 
   if (revoke) {
     if (membership.status < MembershipStatus.Invited) err('User is already revoked');
     if (membership.atype === MembershipType.Owner) {
       if (actorMember?.atype !== MembershipType.Owner) err('Only owners can revoke other owners');
-      if (membership.status === MembershipStatus.Confirmed && (await confirmedOwnerCount(db, orgId)) <= 1) {
+      if (
+        membership.status === MembershipStatus.Confirmed &&
+        (await confirmedOwnerCount(db, orgId)) <= 1
+      ) {
         err('Organization must have at least one confirmed owner');
       }
     }
@@ -787,7 +901,9 @@ function groupToJson(g: Group) {
 orgMemberRoutes.get('/organizations/:orgId/groups', async (c) => {
   const orgId = c.req.param('orgId');
   await requireMember(c, orgId, MembershipType.Manager);
-  const rows = await c.get('db').query.groups.findMany({ where: eq(groups.organizationsUuid, orgId!) });
+  const rows = await c
+    .get('db')
+    .query.groups.findMany({ where: eq(groups.organizationsUuid, orgId!) });
   return c.json({ data: rows.map(groupToJson), object: 'list', continuationToken: null });
 });
 
@@ -817,7 +933,10 @@ async function upsertGroup(c: Ctx, existing: Group | null) {
       };
 
   if (existing) {
-    await db.update(groups).set({ name, accessAll, externalId, revisionDate: now }).where(eq(groups.uuid, group.uuid));
+    await db
+      .update(groups)
+      .set({ name, accessAll, externalId, revisionDate: now })
+      .where(eq(groups.uuid, group.uuid));
     await db.delete(collectionsGroups).where(eq(collectionsGroups.groupsUuid, group.uuid));
     await db.delete(groupsUsers).where(eq(groupsUsers.groupsUuid, group.uuid));
   } else {
@@ -838,7 +957,10 @@ async function upsertGroup(c: Ctx, existing: Group | null) {
       where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId)),
     });
     if (!membership) continue;
-    await db.insert(groupsUsers).values({ groupsUuid: group.uuid, usersOrganizationsUuid: memberId }).onConflictDoNothing();
+    await db
+      .insert(groupsUsers)
+      .values({ groupsUuid: group.uuid, usersOrganizationsUuid: memberId })
+      .onConflictDoNothing();
   }
 
   await logOrgEvent(db, {
@@ -855,7 +977,9 @@ async function upsertGroup(c: Ctx, existing: Group | null) {
 orgMemberRoutes.post('/organizations/:orgId/groups', (c) => upsertGroup(c, null));
 
 async function loadGroup(c: Ctx, orgId: string): Promise<Group> {
-  const group = await c.get('db').query.groups.findFirst({ where: eq(groups.uuid, c.req.param('groupId')!) });
+  const group = await c
+    .get('db')
+    .query.groups.findFirst({ where: eq(groups.uuid, c.req.param('groupId')!) });
   if (!group || group.organizationsUuid !== orgId) notFound('Group not found');
   return group;
 }
@@ -865,7 +989,10 @@ orgMemberRoutes.get('/organizations/:orgId/groups/:groupId/details', async (c) =
   await requireMember(c, orgId, MembershipType.Admin);
   const db = c.get('db');
   const group = await loadGroup(c, orgId);
-  const cols = await db.select().from(collectionsGroups).where(eq(collectionsGroups.groupsUuid, group.uuid));
+  const cols = await db
+    .select()
+    .from(collectionsGroups)
+    .where(eq(collectionsGroups.groupsUuid, group.uuid));
   const members = await db.select().from(groupsUsers).where(eq(groupsUsers.groupsUuid, group.uuid));
   return c.json({
     ...groupToJson(group),
@@ -915,7 +1042,11 @@ orgMemberRoutes.get('/organizations/:orgId/groups/:groupId/users', async (c) => 
   const orgId = c.req.param('orgId')!;
   await requireMember(c, orgId, MembershipType.Admin);
   const group = await loadGroup(c, orgId);
-  const rows = await c.get('db').select().from(groupsUsers).where(eq(groupsUsers.groupsUuid, group.uuid));
+  const rows = await c
+    .get('db')
+    .select()
+    .from(groupsUsers)
+    .where(eq(groupsUsers.groupsUuid, group.uuid));
   return c.json(rows.map((r) => r.usersOrganizationsUuid));
 });
 
@@ -931,7 +1062,10 @@ orgMemberRoutes.put('/organizations/:orgId/groups/:groupId/users', async (c) => 
       where: and(eq(usersOrganizations.uuid, memberId), eq(usersOrganizations.orgUuid, orgId)),
     });
     if (!membership) continue;
-    await db.insert(groupsUsers).values({ groupsUuid: group.uuid, usersOrganizationsUuid: memberId }).onConflictDoNothing();
+    await db
+      .insert(groupsUsers)
+      .values({ groupsUuid: group.uuid, usersOrganizationsUuid: memberId })
+      .onConflictDoNothing();
   }
   return c.body(null, 200);
 });
@@ -952,9 +1086,12 @@ orgMemberRoutes.put('/organizations/:orgId/users/:memberId/groups', async (c) =>
   await requireMember(c, orgId, MembershipType.Admin);
   const db = c.get('db');
   const membership = await db.query.usersOrganizations.findFirst({
-    where: and(eq(usersOrganizations.uuid, c.req.param('memberId')!), eq(usersOrganizations.orgUuid, orgId)),
+    where: and(
+      eq(usersOrganizations.uuid, c.req.param('memberId')!),
+      eq(usersOrganizations.orgUuid, orgId),
+    ),
   });
-  if (!membership) err('User isn\'t member of the organization');
+  if (!membership) err("User isn't member of the organization");
   const body = (await c.req.json()) as Record<string, unknown>;
   await replaceMemberGroups(db, membership, ci<string[]>(body, 'groupIds') ?? []);
   return c.body(null, 200);
@@ -967,7 +1104,9 @@ orgMemberRoutes.put('/organizations/:orgId/users/:memberId/groups', async (c) =>
 orgMemberRoutes.get('/organizations/:orgId/policies', async (c) => {
   const orgId = c.req.param('orgId');
   await requireMember(c, orgId, MembershipType.Admin);
-  const rows = await c.get('db').query.orgPolicies.findMany({ where: eq(orgPolicies.orgUuid, orgId!) });
+  const rows = await c
+    .get('db')
+    .query.orgPolicies.findMany({ where: eq(orgPolicies.orgUuid, orgId!) });
   return c.json({ data: rows.map(policyToJson), object: 'list', continuationToken: null });
 });
 
@@ -977,7 +1116,11 @@ orgMemberRoutes.get('/organizations/:orgId/policies/master-password', async (c) 
   const row = await c.get('db').query.orgPolicies.findFirst({
     where: and(eq(orgPolicies.orgUuid, orgId), eq(orgPolicies.atype, OrgPolicyType.MasterPassword)),
   });
-  return c.json(row ? policyToJson(row) : { enabled: false, type: OrgPolicyType.MasterPassword, data: null, object: 'policy' });
+  return c.json(
+    row
+      ? policyToJson(row)
+      : { enabled: false, type: OrgPolicyType.MasterPassword, data: null, object: 'policy' },
+  );
 });
 
 orgMemberRoutes.get('/organizations/:orgId/policies/:type', async (c) => {
@@ -987,7 +1130,15 @@ orgMemberRoutes.get('/organizations/:orgId/policies/:type', async (c) => {
   const row = await c.get('db').query.orgPolicies.findFirst({
     where: and(eq(orgPolicies.orgUuid, orgId), eq(orgPolicies.atype, type)),
   });
-  if (!row) return c.json({ id: null, organizationId: orgId, type, data: null, enabled: false, object: 'policy' });
+  if (!row)
+    return c.json({
+      id: null,
+      organizationId: orgId,
+      type,
+      data: null,
+      enabled: false,
+      object: 'policy',
+    });
   return c.json(policyToJson(row));
 });
 
@@ -1012,24 +1163,40 @@ orgMemberRoutes.put('/organizations/:orgId/policies/:type', async (c) => {
 
     if (type === OrgPolicyType.TwoFactorAuthentication) {
       for (const m of members) {
-        if (isAtLeast(m.atype, MembershipType.Admin) || m.status < MembershipStatus.Accepted) continue;
-        const tf = await db.query.twofactor.findFirst({ where: eq(twofactor.userUuid, m.userUuid) });
+        if (isAtLeast(m.atype, MembershipType.Admin) || m.status < MembershipStatus.Accepted)
+          continue;
+        const tf = await db.query.twofactor.findFirst({
+          where: eq(twofactor.userUuid, m.userUuid),
+        });
         if (!tf) {
-          await db.update(usersOrganizations).set({ status: m.status - 128 }).where(eq(usersOrganizations.uuid, m.uuid));
+          await db
+            .update(usersOrganizations)
+            .set({ status: m.status - 128 })
+            .where(eq(usersOrganizations.uuid, m.uuid));
           const target = (await db.query.users.findFirst({ where: eq(users.uuid, m.userUuid) }))!;
-          c.executionCtx.waitUntil(mail.twoFactorRemovedFromOrg(mailer, config, target.email, org.name));
+          c.executionCtx.waitUntil(
+            mail.twoFactorRemovedFromOrg(mailer, config, target.email, org.name),
+          );
         }
       }
     }
 
     if (type === OrgPolicyType.SingleOrg) {
       for (const m of members) {
-        if (isAtLeast(m.atype, MembershipType.Admin) || m.status < MembershipStatus.Accepted) continue;
-        const others = await db.query.usersOrganizations.findMany({ where: eq(usersOrganizations.userUuid, m.userUuid) });
+        if (isAtLeast(m.atype, MembershipType.Admin) || m.status < MembershipStatus.Accepted)
+          continue;
+        const others = await db.query.usersOrganizations.findMany({
+          where: eq(usersOrganizations.userUuid, m.userUuid),
+        });
         if (others.some((o) => o.orgUuid !== orgId && o.status >= MembershipStatus.Accepted)) {
-          await db.update(usersOrganizations).set({ status: m.status - 128 }).where(eq(usersOrganizations.uuid, m.uuid));
+          await db
+            .update(usersOrganizations)
+            .set({ status: m.status - 128 })
+            .where(eq(usersOrganizations.uuid, m.uuid));
           const target = (await db.query.users.findFirst({ where: eq(users.uuid, m.userUuid) }))!;
-          c.executionCtx.waitUntil(mail.singleOrgRemovedFromOrg(mailer, config, target.email, org.name));
+          c.executionCtx.waitUntil(
+            mail.singleOrgRemovedFromOrg(mailer, config, target.email, org.name),
+          );
         }
       }
     }
@@ -1046,7 +1213,10 @@ orgMemberRoutes.put('/organizations/:orgId/policies/:type', async (c) => {
     data: JSON.stringify(data),
   };
   if (existing) {
-    await db.update(orgPolicies).set({ enabled, data: row.data }).where(eq(orgPolicies.uuid, existing.uuid));
+    await db
+      .update(orgPolicies)
+      .set({ enabled, data: row.data })
+      .where(eq(orgPolicies.uuid, existing.uuid));
   } else {
     await db.insert(orgPolicies).values(row);
   }
@@ -1065,7 +1235,9 @@ orgMemberRoutes.put('/organizations/:orgId/policies/:type', async (c) => {
 // Auto-enroll status (admin password reset — not supported)
 orgMemberRoutes.get('/organizations/:orgId/auto-enroll-status', async (c) => {
   const orgId = c.req.param('orgId')!;
-  const org = await c.get('db').query.organizations.findFirst({ where: eq(organizations.uuid, orgId) });
+  const org = await c
+    .get('db')
+    .query.organizations.findFirst({ where: eq(organizations.uuid, orgId) });
   if (!org) notFound("Organization doesn't exist");
   return c.json({ id: org.uuid, resetPasswordEnabled: false });
 });

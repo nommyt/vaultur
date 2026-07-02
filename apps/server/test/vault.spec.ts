@@ -55,12 +55,16 @@ describe('vault', () => {
       lastKnownRevisionDate: '2020-01-01T00:00:00.000Z',
     });
     expect(stale.status).toBe(400);
-    expect(((await stale.json()) as Record<string, any>).errorModel.message).toContain('out of date');
+    expect(((await stale.json()) as Record<string, any>).errorModel.message).toContain(
+      'out of date',
+    );
 
     // Soft delete → appears with deletedDate
     const softDeleted = await api(token, 'PUT', `/api/ciphers/${cipher.id}/delete`);
     expect(softDeleted.status).toBe(200);
-    const afterSoft = (await (await api(token, 'GET', `/api/ciphers/${cipher.id}`)).json()) as Record<string, any>;
+    const afterSoft = (await (
+      await api(token, 'GET', `/api/ciphers/${cipher.id}`)
+    ).json()) as Record<string, any>;
     expect(afterSoft.deletedDate).toBeTruthy();
 
     // Restore
@@ -84,18 +88,28 @@ describe('vault', () => {
     const folder = (await folderRes.json()) as Record<string, any>;
     expect(folder.object).toBe('folder');
 
-    const cipherRes = await api(token, 'POST', '/api/ciphers', { ...LOGIN_CIPHER, folderId: folder.id });
+    const cipherRes = await api(token, 'POST', '/api/ciphers', {
+      ...LOGIN_CIPHER,
+      folderId: folder.id,
+    });
     const cipher = (await cipherRes.json()) as Record<string, any>;
     expect(cipher.folderId).toBe(folder.id);
 
     // Rename folder
-    const renamed = await api(token, 'PUT', `/api/folders/${folder.id}`, { name: '2.renamed|iv==' });
+    const renamed = await api(token, 'PUT', `/api/folders/${folder.id}`, {
+      name: '2.renamed|iv==',
+    });
     expect(((await renamed.json()) as Record<string, any>).name).toBe('2.renamed|iv==');
 
     // Move out via /ciphers/move
-    const moved = await api(token, 'POST', '/api/ciphers/move', { ids: [cipher.id], folderId: null });
+    const moved = await api(token, 'POST', '/api/ciphers/move', {
+      ids: [cipher.id],
+      folderId: null,
+    });
     expect(moved.status).toBe(200);
-    const afterMove = (await (await api(token, 'GET', `/api/ciphers/${cipher.id}`)).json()) as Record<string, any>;
+    const afterMove = (await (
+      await api(token, 'GET', `/api/ciphers/${cipher.id}`)
+    ).json()) as Record<string, any>;
     expect(afterMove.folderId).toBeNull();
 
     // Delete folder
@@ -148,7 +162,9 @@ describe('vault', () => {
     const token = session.access_token;
     await api(token, 'POST', '/api/ciphers', LOGIN_CIPHER);
 
-    const badPurge = await api(token, 'POST', '/api/ciphers/purge', { masterPasswordHash: 'wrong' });
+    const badPurge = await api(token, 'POST', '/api/ciphers/purge', {
+      masterPasswordHash: 'wrong',
+    });
     expect(badPurge.status).toBe(400);
 
     const purge = await api(token, 'POST', '/api/ciphers/purge', {
@@ -186,7 +202,10 @@ describe('vault', () => {
     const session = await registerAndLogin();
     const token = session.access_token;
 
-    const domains = (await (await api(token, 'GET', '/api/settings/domains')).json()) as Record<string, any>;
+    const domains = (await (await api(token, 'GET', '/api/settings/domains')).json()) as Record<
+      string,
+      any
+    >;
     expect(domains.object).toBe('domains');
     expect(domains.globalEquivalentDomains.length).toBeGreaterThan(50);
 
@@ -196,7 +215,10 @@ describe('vault', () => {
     });
     expect(update.status).toBe(200);
 
-    const after = (await (await api(token, 'GET', '/api/settings/domains')).json()) as Record<string, any>;
+    const after = (await (await api(token, 'GET', '/api/settings/domains')).json()) as Record<
+      string,
+      any
+    >;
     expect(after.equivalentDomains).toEqual([['example.com', 'example.org']]);
     expect(after.globalEquivalentDomains.find((g: any) => g.type === 2).excluded).toBe(true);
   });

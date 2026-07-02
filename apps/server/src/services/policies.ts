@@ -16,7 +16,10 @@ interface MasterPasswordPolicyData {
  * Merged master-password policy across the user's confirmed orgs
  * (vaultwarden master_password_policy in identity.rs).
  */
-export async function masterPasswordPolicy(db: Db, userUuid: string): Promise<Record<string, unknown>> {
+export async function masterPasswordPolicy(
+  db: Db,
+  userUuid: string,
+): Promise<Record<string, unknown>> {
   const rows = await db
     .select({ data: orgPolicies.data })
     .from(orgPolicies)

@@ -35,12 +35,8 @@
           "name": "archives_user_uuid_users_uuid_fk",
           "tableFrom": "archives",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -48,22 +44,15 @@
           "name": "archives_cipher_uuid_ciphers_uuid_fk",
           "tableFrom": "archives",
           "tableTo": "ciphers",
-          "columnsFrom": [
-            "cipher_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["cipher_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "archives_user_uuid_cipher_uuid_pk": {
-          "columns": [
-            "user_uuid",
-            "cipher_uuid"
-          ],
+          "columns": ["user_uuid", "cipher_uuid"],
           "name": "archives_user_uuid_cipher_uuid_pk"
         }
       },
@@ -112,9 +101,7 @@
       "indexes": {
         "idx_attachments_cipher_uuid": {
           "name": "idx_attachments_cipher_uuid",
-          "columns": [
-            "cipher_uuid"
-          ],
+          "columns": ["cipher_uuid"],
           "isUnique": false
         }
       },
@@ -123,12 +110,8 @@
           "name": "attachments_cipher_uuid_ciphers_uuid_fk",
           "tableFrom": "attachments",
           "tableTo": "ciphers",
-          "columnsFrom": [
-            "cipher_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["cipher_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -249,9 +232,7 @@
       "indexes": {
         "idx_auth_requests_user_uuid": {
           "name": "idx_auth_requests_user_uuid",
-          "columns": [
-            "user_uuid"
-          ],
+          "columns": ["user_uuid"],
           "isUnique": false
         }
       },
@@ -260,12 +241,8 @@
           "name": "auth_requests_user_uuid_users_uuid_fk",
           "tableFrom": "auth_requests",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -379,16 +356,12 @@
       "indexes": {
         "idx_ciphers_user_uuid": {
           "name": "idx_ciphers_user_uuid",
-          "columns": [
-            "user_uuid"
-          ],
+          "columns": ["user_uuid"],
           "isUnique": false
         },
         "idx_ciphers_organization_uuid": {
           "name": "idx_ciphers_organization_uuid",
-          "columns": [
-            "organization_uuid"
-          ],
+          "columns": ["organization_uuid"],
           "isUnique": false
         }
       },
@@ -397,12 +370,8 @@
           "name": "ciphers_user_uuid_users_uuid_fk",
           "tableFrom": "ciphers",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -435,12 +404,8 @@
           "name": "ciphers_collections_cipher_uuid_ciphers_uuid_fk",
           "tableFrom": "ciphers_collections",
           "tableTo": "ciphers",
-          "columnsFrom": [
-            "cipher_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["cipher_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -448,22 +413,15 @@
           "name": "ciphers_collections_collection_uuid_collections_uuid_fk",
           "tableFrom": "ciphers_collections",
           "tableTo": "collections",
-          "columnsFrom": [
-            "collection_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["collection_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "ciphers_collections_cipher_uuid_collection_uuid_pk": {
-          "columns": [
-            "cipher_uuid",
-            "collection_uuid"
-          ],
+          "columns": ["cipher_uuid", "collection_uuid"],
           "name": "ciphers_collections_cipher_uuid_collection_uuid_pk"
         }
       },
@@ -505,9 +463,7 @@
       "indexes": {
         "idx_collections_org_uuid": {
           "name": "idx_collections_org_uuid",
-          "columns": [
-            "org_uuid"
-          ],
+          "columns": ["org_uuid"],
           "isUnique": false
         }
       },
@@ -516,12 +472,8 @@
           "name": "collections_org_uuid_organizations_uuid_fk",
           "tableFrom": "collections",
           "tableTo": "organizations",
-          "columnsFrom": [
-            "org_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["org_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -578,12 +530,8 @@
           "name": "collections_groups_collections_uuid_collections_uuid_fk",
           "tableFrom": "collections_groups",
           "tableTo": "collections",
-          "columnsFrom": [
-            "collections_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["collections_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -591,22 +539,15 @@
           "name": "collections_groups_groups_uuid_groups_uuid_fk",
           "tableFrom": "collections_groups",
           "tableTo": "groups",
-          "columnsFrom": [
-            "groups_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["groups_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "collections_groups_collections_uuid_groups_uuid_pk": {
-          "columns": [
-            "collections_uuid",
-            "groups_uuid"
-          ],
+          "columns": ["collections_uuid", "groups_uuid"],
           "name": "collections_groups_collections_uuid_groups_uuid_pk"
         }
       },
@@ -690,16 +631,12 @@
       "indexes": {
         "idx_devices_user_uuid": {
           "name": "idx_devices_user_uuid",
-          "columns": [
-            "user_uuid"
-          ],
+          "columns": ["user_uuid"],
           "isUnique": false
         },
         "idx_devices_refresh_token": {
           "name": "idx_devices_refresh_token",
-          "columns": [
-            "refresh_token"
-          ],
+          "columns": ["refresh_token"],
           "isUnique": false
         }
       },
@@ -708,22 +645,15 @@
           "name": "devices_user_uuid_users_uuid_fk",
           "tableFrom": "devices",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "devices_uuid_user_uuid_pk": {
-          "columns": [
-            "uuid",
-            "user_uuid"
-          ],
+          "columns": ["uuid", "user_uuid"],
           "name": "devices_uuid_user_uuid_pk"
         }
       },
@@ -821,16 +751,12 @@
       "indexes": {
         "idx_emergency_access_grantor_uuid": {
           "name": "idx_emergency_access_grantor_uuid",
-          "columns": [
-            "grantor_uuid"
-          ],
+          "columns": ["grantor_uuid"],
           "isUnique": false
         },
         "idx_emergency_access_grantee_uuid": {
           "name": "idx_emergency_access_grantee_uuid",
-          "columns": [
-            "grantee_uuid"
-          ],
+          "columns": ["grantee_uuid"],
           "isUnique": false
         }
       },
@@ -839,12 +765,8 @@
           "name": "emergency_access_grantor_uuid_users_uuid_fk",
           "tableFrom": "emergency_access",
           "tableTo": "users",
-          "columnsFrom": [
-            "grantor_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["grantor_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -852,12 +774,8 @@
           "name": "emergency_access_grantee_uuid_users_uuid_fk",
           "tableFrom": "emergency_access",
           "tableTo": "users",
-          "columnsFrom": [
-            "grantee_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["grantee_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -985,18 +903,12 @@
       "indexes": {
         "idx_event_org_uuid_event_date": {
           "name": "idx_event_org_uuid_event_date",
-          "columns": [
-            "org_uuid",
-            "event_date"
-          ],
+          "columns": ["org_uuid", "event_date"],
           "isUnique": false
         },
         "idx_event_user_uuid_event_date": {
           "name": "idx_event_user_uuid_event_date",
-          "columns": [
-            "user_uuid",
-            "event_date"
-          ],
+          "columns": ["user_uuid", "event_date"],
           "isUnique": false
         }
       },
@@ -1029,12 +941,8 @@
           "name": "favorites_user_uuid_users_uuid_fk",
           "tableFrom": "favorites",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1042,22 +950,15 @@
           "name": "favorites_cipher_uuid_ciphers_uuid_fk",
           "tableFrom": "favorites",
           "tableTo": "ciphers",
-          "columnsFrom": [
-            "cipher_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["cipher_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "favorites_user_uuid_cipher_uuid_pk": {
-          "columns": [
-            "user_uuid",
-            "cipher_uuid"
-          ],
+          "columns": ["user_uuid", "cipher_uuid"],
           "name": "favorites_user_uuid_cipher_uuid_pk"
         }
       },
@@ -1106,9 +1007,7 @@
       "indexes": {
         "idx_folders_user_uuid": {
           "name": "idx_folders_user_uuid",
-          "columns": [
-            "user_uuid"
-          ],
+          "columns": ["user_uuid"],
           "isUnique": false
         }
       },
@@ -1117,12 +1016,8 @@
           "name": "folders_user_uuid_users_uuid_fk",
           "tableFrom": "folders",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1155,12 +1050,8 @@
           "name": "folders_ciphers_cipher_uuid_ciphers_uuid_fk",
           "tableFrom": "folders_ciphers",
           "tableTo": "ciphers",
-          "columnsFrom": [
-            "cipher_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["cipher_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1168,22 +1059,15 @@
           "name": "folders_ciphers_folder_uuid_folders_uuid_fk",
           "tableFrom": "folders_ciphers",
           "tableTo": "folders",
-          "columnsFrom": [
-            "folder_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["folder_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "folders_ciphers_cipher_uuid_folder_uuid_pk": {
-          "columns": [
-            "cipher_uuid",
-            "folder_uuid"
-          ],
+          "columns": ["cipher_uuid", "folder_uuid"],
           "name": "folders_ciphers_cipher_uuid_folder_uuid_pk"
         }
       },
@@ -1247,9 +1131,7 @@
       "indexes": {
         "idx_groups_organizations_uuid": {
           "name": "idx_groups_organizations_uuid",
-          "columns": [
-            "organizations_uuid"
-          ],
+          "columns": ["organizations_uuid"],
           "isUnique": false
         }
       },
@@ -1258,12 +1140,8 @@
           "name": "groups_organizations_uuid_organizations_uuid_fk",
           "tableFrom": "groups",
           "tableTo": "organizations",
-          "columnsFrom": [
-            "organizations_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["organizations_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1296,12 +1174,8 @@
           "name": "groups_users_groups_uuid_groups_uuid_fk",
           "tableFrom": "groups_users",
           "tableTo": "groups",
-          "columnsFrom": [
-            "groups_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["groups_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1309,22 +1183,15 @@
           "name": "groups_users_users_organizations_uuid_users_organizations_uuid_fk",
           "tableFrom": "groups_users",
           "tableTo": "users_organizations",
-          "columnsFrom": [
-            "users_organizations_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["users_organizations_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "groups_users_groups_uuid_users_organizations_uuid_pk": {
-          "columns": [
-            "groups_uuid",
-            "users_organizations_uuid"
-          ],
+          "columns": ["groups_uuid", "users_organizations_uuid"],
           "name": "groups_users_groups_uuid_users_organizations_uuid_pk"
         }
       },
@@ -1390,9 +1257,7 @@
       "indexes": {
         "idx_org_policies_org_uuid": {
           "name": "idx_org_policies_org_uuid",
-          "columns": [
-            "org_uuid"
-          ],
+          "columns": ["org_uuid"],
           "isUnique": false
         }
       },
@@ -1401,12 +1266,8 @@
           "name": "org_policies_org_uuid_organizations_uuid_fk",
           "tableFrom": "org_policies",
           "tableTo": "organizations",
-          "columnsFrom": [
-            "org_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["org_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1460,22 +1321,15 @@
           "name": "organization_api_key_org_uuid_organizations_uuid_fk",
           "tableFrom": "organization_api_key",
           "tableTo": "organizations",
-          "columnsFrom": [
-            "org_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["org_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "organization_api_key_uuid_org_uuid_pk": {
-          "columns": [
-            "uuid",
-            "org_uuid"
-          ],
+          "columns": ["uuid", "org_uuid"],
           "name": "organization_api_key_uuid_org_uuid_pk"
         }
       },
@@ -1669,16 +1523,12 @@
       "indexes": {
         "idx_sends_user_uuid": {
           "name": "idx_sends_user_uuid",
-          "columns": [
-            "user_uuid"
-          ],
+          "columns": ["user_uuid"],
           "isUnique": false
         },
         "idx_sends_deletion_date": {
           "name": "idx_sends_deletion_date",
-          "columns": [
-            "deletion_date"
-          ],
+          "columns": ["deletion_date"],
           "isUnique": false
         }
       },
@@ -1687,12 +1537,8 @@
           "name": "sends_user_uuid_users_uuid_fk",
           "tableFrom": "sends",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1805,12 +1651,8 @@
           "name": "sso_users_user_uuid_users_uuid_fk",
           "tableFrom": "sso_users",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1869,9 +1711,7 @@
       "indexes": {
         "idx_twofactor_user_uuid": {
           "name": "idx_twofactor_user_uuid",
-          "columns": [
-            "user_uuid"
-          ],
+          "columns": ["user_uuid"],
           "isUnique": false
         }
       },
@@ -1880,12 +1720,8 @@
           "name": "twofactor_user_uuid_users_uuid_fk",
           "tableFrom": "twofactor",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1984,22 +1820,15 @@
           "name": "twofactor_incomplete_user_uuid_users_uuid_fk",
           "tableFrom": "twofactor_incomplete",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "twofactor_incomplete_user_uuid_device_uuid_pk": {
-          "columns": [
-            "user_uuid",
-            "device_uuid"
-          ],
+          "columns": ["user_uuid", "device_uuid"],
           "name": "twofactor_incomplete_user_uuid_device_uuid_pk"
         }
       },
@@ -2236,9 +2065,7 @@
       "indexes": {
         "users_email_unique": {
           "name": "users_email_unique",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "isUnique": true
         }
       },
@@ -2295,12 +2122,8 @@
           "name": "users_collections_user_uuid_users_uuid_fk",
           "tableFrom": "users_collections",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2308,22 +2131,15 @@
           "name": "users_collections_collection_uuid_collections_uuid_fk",
           "tableFrom": "users_collections",
           "tableTo": "collections",
-          "columnsFrom": [
-            "collection_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["collection_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "users_collections_user_uuid_collection_uuid_pk": {
-          "columns": [
-            "user_uuid",
-            "collection_uuid"
-          ],
+          "columns": ["user_uuid", "collection_uuid"],
           "name": "users_collections_user_uuid_collection_uuid_pk"
         }
       },
@@ -2408,16 +2224,12 @@
       "indexes": {
         "idx_users_organizations_user_uuid": {
           "name": "idx_users_organizations_user_uuid",
-          "columns": [
-            "user_uuid"
-          ],
+          "columns": ["user_uuid"],
           "isUnique": false
         },
         "idx_users_organizations_org_uuid": {
           "name": "idx_users_organizations_org_uuid",
-          "columns": [
-            "org_uuid"
-          ],
+          "columns": ["org_uuid"],
           "isUnique": false
         }
       },
@@ -2426,12 +2238,8 @@
           "name": "users_organizations_user_uuid_users_uuid_fk",
           "tableFrom": "users_organizations",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["user_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2439,12 +2247,8 @@
           "name": "users_organizations_org_uuid_organizations_uuid_fk",
           "tableFrom": "users_organizations",
           "tableTo": "organizations",
-          "columnsFrom": [
-            "org_uuid"
-          ],
-          "columnsTo": [
-            "uuid"
-          ],
+          "columnsFrom": ["org_uuid"],
+          "columnsTo": ["uuid"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

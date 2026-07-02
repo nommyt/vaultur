@@ -27,7 +27,13 @@ import {
   type Send,
   type User,
 } from '@vaultur/db';
-import { CipherType, MembershipStatus, MembershipType, OrgPolicyType, SendType } from '@vaultur/shared';
+import {
+  CipherType,
+  MembershipStatus,
+  MembershipType,
+  OrgPolicyType,
+  SendType,
+} from '@vaultur/shared';
 import type { Config } from '../config';
 import { basicClaims, encodeJwt } from '../auth/jwt';
 import { b64UrlEncode } from '../util';
@@ -45,7 +51,10 @@ export interface CipherSyncData {
   cipherCollections: Map<string, string[]>;
   members: Map<string, Membership>;
   userCollections: Map<string, { readOnly: boolean; hidePasswords: boolean; manage: boolean }>;
-  userCollectionsGroups: Map<string, { readOnly: boolean; hidePasswords: boolean; manage: boolean }>;
+  userCollectionsGroups: Map<
+    string,
+    { readOnly: boolean; hidePasswords: boolean; manage: boolean }
+  >;
 }
 
 export type CipherSyncType = 'user' | 'org';
@@ -98,7 +107,10 @@ export async function loadCipherSyncData(
   }
 
   const membershipRows = await db.query.usersOrganizations.findMany({
-    where: and(eq(usersOrganizations.userUuid, userUuid), eq(usersOrganizations.status, MembershipStatus.Confirmed)),
+    where: and(
+      eq(usersOrganizations.userUuid, userUuid),
+      eq(usersOrganizations.status, MembershipStatus.Confirmed),
+    ),
   });
   for (const m of membershipRows) data.members.set(m.orgUuid, m);
 
@@ -118,7 +130,10 @@ export async function loadCipherSyncData(
 
     // Cipher → collection ids
     const ccRows = await db
-      .select({ cipherUuid: ciphersCollections.cipherUuid, collectionUuid: ciphersCollections.collectionUuid })
+      .select({
+        cipherUuid: ciphersCollections.cipherUuid,
+        collectionUuid: ciphersCollections.collectionUuid,
+      })
       .from(ciphersCollections)
       .innerJoin(collections, eq(ciphersCollections.collectionUuid, collections.uuid))
       .where(inArray(collections.orgUuid, orgIds));
@@ -129,7 +144,10 @@ export async function loadCipherSyncData(
     }
 
     // Direct per-user collection access
-    const ucRows = await db.select().from(usersCollections).where(eq(usersCollections.userUuid, userUuid));
+    const ucRows = await db
+      .select()
+      .from(usersCollections)
+      .where(eq(usersCollections.userUuid, userUuid));
     for (const r of ucRows) {
       data.userCollections.set(r.collectionUuid, {
         readOnly: r.readOnly,
@@ -228,7 +246,9 @@ function parseObject(value: string | null | undefined): JsonMap {
   if (!value) return {};
   try {
     const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as JsonMap) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as JsonMap)
+      : {};
   } catch {
     return {};
   }
@@ -238,13 +258,19 @@ function parseArray(value: string | null | undefined): JsonMap[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? (parsed.filter((v) => v && typeof v === 'object') as JsonMap[]) : [];
+    return Array.isArray(parsed)
+      ? (parsed.filter((v) => v && typeof v === 'object') as JsonMap[])
+      : [];
   } catch {
     return [];
   }
 }
 
-export async function attachmentToJson(config: Config, secret: string, att: Attachment): Promise<JsonMap> {
+export async function attachmentToJson(
+  config: Config,
+  secret: string,
+  att: Attachment,
+): Promise<JsonMap> {
   const token = await encodeJwt(
     secret,
     basicClaims({
@@ -290,7 +316,9 @@ export async function cipherToJson(cipher: Cipher, opts: CipherJsonOptions): Pro
 
   const attList = sync.cipherAttachments.get(cipher.uuid) ?? [];
   const attachmentsJson =
-    attList.length > 0 ? await Promise.all(attList.map((a) => attachmentToJson(config, secret, a))) : null;
+    attList.length > 0
+      ? await Promise.all(attList.map((a) => attachmentToJson(config, secret, a)))
+      : null;
 
   let readOnly = false;
   let hidePasswords = false;
@@ -465,7 +493,9 @@ export function sendToJson(send: Send): JsonMap {
     key: send.akey,
     maxAccessCount: send.maxAccessCount,
     accessCount: send.accessCount,
-    password: send.passwordHash ? send.passwordHash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : null,
+    password: send.passwordHash
+      ? send.passwordHash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      : null,
     authType: send.passwordHash ? 1 : 0,
     disabled: send.disabled,
     hideEmail: send.hideEmail,
@@ -486,7 +516,11 @@ export function collectionToJson(col: Collection): JsonMap {
   };
 }
 
-export function collectionToJsonDetails(col: Collection, userUuid: string, sync: CipherSyncData): JsonMap {
+export function collectionToJsonDetails(
+  col: Collection,
+  userUuid: string,
+  sync: CipherSyncData,
+): JsonMap {
   let readOnly = true;
   let hidePasswords = true;
   let manage = false;
@@ -523,7 +557,11 @@ export function collectionToJsonDetails(col: Collection, userUuid: string, sync:
   };
 }
 
-export async function membershipToJson(db: Db, m: Membership, emailEnabled: boolean): Promise<JsonMap> {
+export async function membershipToJson(
+  db: Db,
+  m: Membership,
+  emailEnabled: boolean,
+): Promise<JsonMap> {
   const org = await db.query.organizations.findFirst({ where: eq(organizations.uuid, m.orgUuid) });
   const membershipType = m.atype === MembershipType.Manager ? 4 : m.atype;
 
@@ -600,7 +638,10 @@ export async function membershipToJson(db: Db, m: Membership, emailEnabled: bool
 
 export async function profileJson(db: Db, user: User, emailEnabled: boolean): Promise<JsonMap> {
   const memberships = await db.query.usersOrganizations.findMany({
-    where: and(eq(usersOrganizations.userUuid, user.uuid), eq(usersOrganizations.status, MembershipStatus.Confirmed)),
+    where: and(
+      eq(usersOrganizations.userUuid, user.uuid),
+      eq(usersOrganizations.status, MembershipStatus.Confirmed),
+    ),
   });
   const orgsJson = await Promise.all(memberships.map((m) => membershipToJson(db, m, emailEnabled)));
 
@@ -635,7 +676,11 @@ export async function profileJson(db: Db, user: User, emailEnabled: boolean): Pr
 // ---------------------------------------------------------------------------
 
 /** All ciphers visible to a user: owned + in orgs where confirmed member with access. */
-export async function findCiphersVisibleToUser(db: Db, userUuid: string, sync: CipherSyncData): Promise<Cipher[]> {
+export async function findCiphersVisibleToUser(
+  db: Db,
+  userUuid: string,
+  sync: CipherSyncData,
+): Promise<Cipher[]> {
   const orgIds = [...sync.members.keys()];
   const rows = await db
     .select()
@@ -655,7 +700,11 @@ export async function findCiphersVisibleToUser(db: Db, userUuid: string, sync: C
 }
 
 /** Collections visible to the user (direct or via groups or full access). */
-export async function findCollectionsForUser(db: Db, userUuid: string, sync: CipherSyncData): Promise<Collection[]> {
+export async function findCollectionsForUser(
+  db: Db,
+  userUuid: string,
+  sync: CipherSyncData,
+): Promise<Collection[]> {
   const orgIds = [...sync.members.keys()];
   if (orgIds.length === 0) return [];
   const rows = await db.select().from(collections).where(inArray(collections.orgUuid, orgIds));
@@ -673,7 +722,10 @@ export async function findPoliciesForUser(db: Db, userUuid: string): Promise<Org
     .from(orgPolicies)
     .innerJoin(usersOrganizations, eq(orgPolicies.orgUuid, usersOrganizations.orgUuid))
     .where(
-      and(eq(usersOrganizations.userUuid, userUuid), eq(usersOrganizations.status, MembershipStatus.Confirmed)),
+      and(
+        eq(usersOrganizations.userUuid, userUuid),
+        eq(usersOrganizations.status, MembershipStatus.Confirmed),
+      ),
     );
   return rows.map((r) => r.policy);
 }

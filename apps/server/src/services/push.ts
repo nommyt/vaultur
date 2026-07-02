@@ -45,7 +45,11 @@ export interface PushPayload {
   payload: Record<string, unknown>;
 }
 
-export async function sendPushNotification(env: Bindings, config: Config, data: PushPayload): Promise<void> {
+export async function sendPushNotification(
+  env: Bindings,
+  config: Config,
+  data: PushPayload,
+): Promise<void> {
   if (!config.pushEnabled) return;
   const token = await getPushToken(env, config);
   if (!token) return;
@@ -67,7 +71,13 @@ export async function sendPushNotification(env: Bindings, config: Config, data: 
 export async function registerPushDevice(
   env: Bindings,
   config: Config,
-  device: { uuid: string; userUuid: string; pushToken: string | null; pushUuid: string | null; atype: number },
+  device: {
+    uuid: string;
+    userUuid: string;
+    pushToken: string | null;
+    pushUuid: string | null;
+    atype: number;
+  },
 ): Promise<void> {
   if (!config.pushEnabled || !device.pushToken) return;
   const token = await getPushToken(env, config);

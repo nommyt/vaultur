@@ -92,7 +92,9 @@ export function organizationToJson(org: Organization, emailEnabled: boolean) {
 
 async function loadOrg(c: Ctx, orgId: string | undefined): Promise<Organization> {
   if (!orgId) notFound("Organization doesn't exist");
-  const org = await c.get('db').query.organizations.findFirst({ where: eq(organizations.uuid, orgId) });
+  const org = await c
+    .get('db')
+    .query.organizations.findFirst({ where: eq(organizations.uuid, orgId) });
   if (!org) notFound("Organization doesn't exist");
   return org;
 }
@@ -131,7 +133,10 @@ organizationRoutes.post('/organizations', async (c) => {
   const allowed =
     config.orgCreationUsers === 'all' ||
     config.orgCreationUsers === '' ||
-    config.orgCreationUsers.split(',').map((s) => s.trim()).includes(user.email);
+    config.orgCreationUsers
+      .split(',')
+      .map((s) => s.trim())
+      .includes(user.email);
   if (!allowed || config.orgCreationUsers === 'none') {
     err('User not allowed to create organizations');
   }
@@ -167,7 +172,9 @@ organizationRoutes.post('/organizations', async (c) => {
   await db.insert(usersOrganizations).values(membership);
 
   if (collectionName) {
-    await db.insert(collections).values({ uuid: uuid(), orgUuid: org.uuid, name: collectionName, externalId: null });
+    await db
+      .insert(collections)
+      .values({ uuid: uuid(), orgUuid: org.uuid, name: collectionName, externalId: null });
   }
 
   return c.json(organizationToJson(org, c.get('config').emailEnabled));
@@ -263,7 +270,11 @@ organizationRoutes.post('/organizations/:orgId/leave', async (c) => {
 
 organizationRoutes.get('/organizations/:orgId/keys', async (c) => {
   const org = await loadOrg(c, c.req.param('orgId'));
-  return c.json({ publicKey: org.publicKey, privateKey: org.privateKey, object: 'organizationKeys' });
+  return c.json({
+    publicKey: org.publicKey,
+    privateKey: org.privateKey,
+    object: 'organizationKeys',
+  });
 });
 
 organizationRoutes.get('/organizations/:orgId/public-key', async (c) => {
@@ -275,14 +286,18 @@ organizationRoutes.post('/organizations/:orgId/keys', async (c) => {
   const orgId = c.req.param('orgId');
   await requireMember(c, orgId, MembershipType.Admin);
   const org = await loadOrg(c, orgId);
-  if (org.privateKey || org.publicKey) err("Organization Keys already exist");
+  if (org.privateKey || org.publicKey) err('Organization Keys already exist');
 
   const body = (await c.req.json()) as Record<string, unknown>;
   const publicKey = ci<string>(body, 'publicKey');
   const privateKey = ci<string>(body, 'encryptedPrivateKey') ?? ci<string>(body, 'privateKey');
   if (!publicKey || !privateKey) err('Missing keys');
 
-  await c.get('db').update(organizations).set({ publicKey, privateKey }).where(eq(organizations.uuid, orgId));
+  await c
+    .get('db')
+    .update(organizations)
+    .set({ publicKey, privateKey })
+    .where(eq(organizations.uuid, orgId));
   return c.json({ publicKey, privateKey, object: 'organizationKeys' });
 });
 
@@ -316,7 +331,10 @@ organizationRoutes.get('/collections', async (c) => {
   const db = c.get('db');
   const memberships = await findConfirmedMemberships(db, user.uuid);
   const orgIds = memberships.map((m) => m.orgUuid);
-  const rows = orgIds.length > 0 ? await db.select().from(collections).where(inArray(collections.orgUuid, orgIds)) : [];
+  const rows =
+    orgIds.length > 0
+      ? await db.select().from(collections).where(inArray(collections.orgUuid, orgIds))
+      : [];
   return c.json({ data: rows.map(collectionToJson), object: 'list', continuationToken: null });
 });
 
@@ -342,8 +360,12 @@ organizationRoutes.get('/organizations/:orgId/collections', async (c) => {
   });
 });
 
-async function loadCollection(c: Ctx, orgId: string, colId: string | undefined): Promise<Collection> {
-  if (!colId) notFound("Collection not found");
+async function loadCollection(
+  c: Ctx,
+  orgId: string,
+  colId: string | undefined,
+): Promise<Collection> {
+  if (!colId) notFound('Collection not found');
   const col = await c.get('db').query.collections.findFirst({ where: eq(collections.uuid, colId) });
   if (!col || col.orgUuid !== orgId) notFound('Collection not found');
   return col;
@@ -357,14 +379,19 @@ organizationRoutes.get('/organizations/:orgId/collections/:colId/details', async
   const db = c.get('db');
   const sync = await loadCipherSyncData(db, user.uuid, 'org', orgId);
 
-  const userRows = await db.select().from(usersCollections).where(eq(usersCollections.collectionUuid, col.uuid));
+  const userRows = await db
+    .select()
+    .from(usersCollections)
+    .where(eq(usersCollections.collectionUuid, col.uuid));
   const memberByUser = new Map(
-    (await db.query.usersOrganizations.findMany({ where: eq(usersOrganizations.orgUuid, orgId) })).map((m) => [
-      m.userUuid,
-      m,
-    ]),
+    (
+      await db.query.usersOrganizations.findMany({ where: eq(usersOrganizations.orgUuid, orgId) })
+    ).map((m) => [m.userUuid, m]),
   );
-  const groupRows = await db.select().from(collectionsGroups).where(eq(collectionsGroups.collectionsUuid, col.uuid));
+  const groupRows = await db
+    .select()
+    .from(collectionsGroups)
+    .where(eq(collectionsGroups.collectionsUuid, col.uuid));
 
   return c.json({
     ...collectionToJsonDetails(col, user.uuid, sync),
@@ -430,7 +457,13 @@ organizationRoutes.post('/organizations/:orgId/collections', async (c) => {
   if (!member.accessAll && member.atype === MembershipType.Manager) {
     await db
       .insert(usersCollections)
-      .values({ userUuid: user.uuid, collectionUuid: col.uuid, readOnly: false, hidePasswords: false, manage: true })
+      .values({
+        userUuid: user.uuid,
+        collectionUuid: col.uuid,
+        readOnly: false,
+        hidePasswords: false,
+        manage: true,
+      })
       .onConflictDoNothing();
   }
 
@@ -488,7 +521,10 @@ async function updateCollection(c: Ctx) {
     await db.delete(usersCollections).where(eq(usersCollections.collectionUuid, col.uuid));
     for (const assignment of users) {
       const target = await db.query.usersOrganizations.findFirst({
-        where: and(eq(usersOrganizations.uuid, assignment.id), eq(usersOrganizations.orgUuid, orgId)),
+        where: and(
+          eq(usersOrganizations.uuid, assignment.id),
+          eq(usersOrganizations.orgUuid, orgId),
+        ),
       });
       if (!target || target.accessAll) continue;
       await db.insert(usersCollections).values({
@@ -554,12 +590,14 @@ organizationRoutes.get('/organizations/:orgId/collections/:colId/users', async (
   const col = await loadCollection(c, orgId, c.req.param('colId'));
   const db = c.get('db');
 
-  const rows = await db.select().from(usersCollections).where(eq(usersCollections.collectionUuid, col.uuid));
+  const rows = await db
+    .select()
+    .from(usersCollections)
+    .where(eq(usersCollections.collectionUuid, col.uuid));
   const memberByUser = new Map(
-    (await db.query.usersOrganizations.findMany({ where: eq(usersOrganizations.orgUuid, orgId) })).map((m) => [
-      m.userUuid,
-      m,
-    ]),
+    (
+      await db.query.usersOrganizations.findMany({ where: eq(usersOrganizations.orgUuid, orgId) })
+    ).map((m) => [m.userUuid, m]),
   );
   return c.json(
     rows
@@ -609,7 +647,13 @@ organizationRoutes.get('/organizations/:orgId/details', async (c) => {
 
   const sync = await loadCipherSyncData(db, user.uuid, 'org', orgId);
   const rows = await db.select().from(ciphers).where(eq(ciphers.organizationUuid, orgId));
-  const opts = { config: c.get('config'), secret: c.env.JWT_SECRET, userUuid: user.uuid, sync, syncType: 'org' as const };
+  const opts = {
+    config: c.get('config'),
+    secret: c.env.JWT_SECRET,
+    userUuid: user.uuid,
+    sync,
+    syncType: 'org' as const,
+  };
   return c.json({
     data: await Promise.all(rows.map((r) => cipherToJson(r, opts))),
     object: 'list',

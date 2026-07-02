@@ -21,12 +21,7 @@ import { verifyPassword } from '../crypto';
 import { basicClaims, decodeJwt, encodeJwt, issuer } from '../auth/jwt';
 import { createAuthTokens, type AuthMethod } from '../auth/tokens';
 import { ci, constantTimeEqualStr, normalizeEmail, uuid } from '../util';
-import {
-  findUserByEmail,
-  newUserShell,
-  passwordFields,
-  touchUser,
-} from '../services/users';
+import { findUserByEmail, newUserShell, passwordFields, touchUser } from '../services/users';
 import { findDeviceByRefreshToken, getOrCreateDevice, touchDevice } from '../services/devices';
 import { createMailer, mail, type Mailer } from '../services/mail';
 import { masterPasswordPolicy } from '../services/policies';
@@ -124,7 +119,14 @@ identityRoutes.post('/connect/token', async (c) => {
       return passwordLogin(c, db, config, data, ip);
     }
     case 'client_credentials': {
-      checkPresent(data, ['clientId', 'clientSecret', 'scope', 'deviceIdentifier', 'deviceName', 'deviceType']);
+      checkPresent(data, [
+        'clientId',
+        'clientSecret',
+        'scope',
+        'deviceIdentifier',
+        'deviceName',
+        'deviceType',
+      ]);
       return apiKeyLogin(c, db, config, data, ip);
     }
     case 'authorization_code':
@@ -140,14 +142,24 @@ type Ctx = Context<AppEnv>;
 async function refreshLogin(c: Ctx, db: Db, config: Config, data: ConnectData) {
   const device = await findDeviceByRefreshToken(db, data.refreshToken!);
   if (!device) {
-    errJson({ error: 'invalid_grant' }, 'Unable to refresh login credentials: Invalid refresh token');
+    errJson(
+      { error: 'invalid_grant' },
+      'Unable to refresh login credentials: Invalid refresh token',
+    );
   }
   const user = await db.query.users.findFirst({ where: eq(users.uuid, device.userUuid) });
   if (!user || !user.enabled) {
     errJson({ error: 'invalid_grant' }, 'Unable to refresh login credentials: Invalid user');
   }
 
-  const tokens = await createAuthTokens(config, c.env.JWT_SECRET, device, user, 'Password', data.clientId);
+  const tokens = await createAuthTokens(
+    config,
+    c.env.JWT_SECRET,
+    device,
+    user,
+    'Password',
+    data.clientId,
+  );
   await touchDevice(db, device);
 
   return c.json({
@@ -181,13 +193,25 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
       where: and(eq(authRequests.uuid, data.authRequest), eq(authRequests.userUuid, user.uuid)),
     });
     if (!authRequest) {
-      await logUserEvent(db, EventType.UserFailedLogIn, user.uuid, Number(data.deviceType ?? 14), ip);
+      await logUserEvent(
+        db,
+        EventType.UserFailedLogIn,
+        user.uuid,
+        Number(data.deviceType ?? 14),
+        ip,
+      );
       err('Auth request not found. Try again.');
     }
     const expired = Date.now() >= fromDb(authRequest.creationDate).getTime() + 5 * 60 * 1000;
     const codeOk = constantTimeEqualStr(authRequest.accessCode, data.password!);
     if (!authRequest.approved || expired || authRequest.requestIp !== ip || !codeOk) {
-      await logUserEvent(db, EventType.UserFailedLogIn, user.uuid, Number(data.deviceType ?? 14), ip);
+      await logUserEvent(
+        db,
+        EventType.UserFailedLogIn,
+        user.uuid,
+        Number(data.deviceType ?? 14),
+        ip,
+      );
       err('Username or access code is incorrect. Try again');
     }
   } else {
@@ -197,7 +221,13 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
       iterations: user.passwordIterations,
     });
     if (!valid) {
-      await logUserEvent(db, EventType.UserFailedLogIn, user.uuid, Number(data.deviceType ?? 14), ip);
+      await logUserEvent(
+        db,
+        EventType.UserFailedLogIn,
+        user.uuid,
+        Number(data.deviceType ?? 14),
+        ip,
+      );
       err(`Username or password is incorrect. Try again`);
     }
     // Server-side iteration upgrade (vaultwarden kdf_upgrade)
@@ -242,13 +272,28 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 
   if (mailer.enabled && isNew) {
     c.executionCtx.waitUntil(
-      mail.newDeviceLoggedIn(mailer, config, user.email, device.name, String(device.atype), ip, new Date().toUTCString()),
+      mail.newDeviceLoggedIn(
+        mailer,
+        config,
+        user.email,
+        device.name,
+        String(device.atype),
+        ip,
+        new Date().toUTCString(),
+      ),
     );
   }
 
   await touchDevice(db, device);
 
-  const tokens = await createAuthTokens(config, c.env.JWT_SECRET, device, user, 'Password', data.clientId);
+  const tokens = await createAuthTokens(
+    config,
+    c.env.JWT_SECRET,
+    device,
+    user,
+    'Password',
+    data.clientId,
+  );
   await logUserEvent(db, EventType.UserLoggedIn, user.uuid, device.atype, ip);
 
   return c.json(await authenticatedResponse(db, user, tokens, twofactorToken));
@@ -343,12 +388,27 @@ async function apiKeyLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip
   const mailer = createMailer(c.env.EMAIL, config);
   if (mailer.enabled && isNew) {
     c.executionCtx.waitUntil(
-      mail.newDeviceLoggedIn(mailer, config, user.email, device.name, String(device.atype), ip, new Date().toUTCString()),
+      mail.newDeviceLoggedIn(
+        mailer,
+        config,
+        user.email,
+        device.name,
+        String(device.atype),
+        ip,
+        new Date().toUTCString(),
+      ),
     );
   }
 
   await touchDevice(db, device);
-  const tokens = await createAuthTokens(config, c.env.JWT_SECRET, device, user, 'UserApiKey', data.clientId);
+  const tokens = await createAuthTokens(
+    config,
+    c.env.JWT_SECRET,
+    device,
+    user,
+    'UserApiKey',
+    data.clientId,
+  );
   await logUserEvent(db, EventType.UserLoggedIn, user.uuid, device.atype, ip);
 
   return c.json({
@@ -524,7 +584,11 @@ async function registerHandler(c: Ctx, emailVerification: boolean) {
     } else if (organizationUserId && orgInviteToken) {
       let claims: InviteClaims;
       try {
-        claims = await decodeJwt<InviteClaims>(c.env.JWT_SECRET, orgInviteToken, issuer(config.domain, 'invite'));
+        claims = await decodeJwt<InviteClaims>(
+          c.env.JWT_SECRET,
+          orgInviteToken,
+          issuer(config.domain, 'invite'),
+        );
       } catch {
         err('Invalid invite token');
       }
@@ -552,7 +616,11 @@ async function registerHandler(c: Ctx, emailVerification: boolean) {
     if (orgInviteToken) {
       let claims: InviteClaims;
       try {
-        claims = await decodeJwt<InviteClaims>(c.env.JWT_SECRET, orgInviteToken, issuer(config.domain, 'invite'));
+        claims = await decodeJwt<InviteClaims>(
+          c.env.JWT_SECRET,
+          orgInviteToken,
+          issuer(config.domain, 'invite'),
+        );
       } catch {
         err('Invalid invite token');
       }
@@ -570,14 +638,21 @@ async function registerHandler(c: Ctx, emailVerification: boolean) {
               eq(usersOrganizations.status, MembershipStatus.Invited),
             ),
           );
-      } else if (!isSignupAllowed(config, email) && !(await hasEmergencyInvite(db, config, email))) {
+      } else if (
+        !isSignupAllowed(config, email) &&
+        !(await hasEmergencyInvite(db, config, email))
+      ) {
         err('Registration not allowed or user already exists');
       }
     }
     user = existing;
   } else {
     const invited = await takeInvitation(db, email);
-    if (!invited && !isSignupAllowed(config, email) && !(acceptEmergencyAccessId && acceptEmergencyAccessInviteToken)) {
+    if (
+      !invited &&
+      !isSignupAllowed(config, email) &&
+      !(acceptEmergencyAccessId && acceptEmergencyAccessInviteToken)
+    ) {
       err('Registration not allowed or user already exists');
     }
     const shell = newUserShell(email, name);
@@ -614,7 +689,12 @@ async function registerHandler(c: Ctx, emailVerification: boolean) {
     if (config.signupsVerify && !emailVerified) {
       const token = await encodeJwt(
         c.env.JWT_SECRET,
-        basicClaims({ domain: config.domain, kind: 'verifyemail', sub: user.uuid, ttlSeconds: 3600 * 24 * 5 }),
+        basicClaims({
+          domain: config.domain,
+          kind: 'verifyemail',
+          sub: user.uuid,
+          ttlSeconds: 3600 * 24 * 5,
+        }),
       );
       c.executionCtx.waitUntil(mail.welcomeMustVerify(mailer, config, email, user.uuid, token));
       await db.update(users).set({ lastVerifyingAt: nowDb() }).where(eq(users.uuid, user.uuid));
@@ -638,13 +718,19 @@ function cleanPasswordHint(hint: string | null | undefined): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
-function validateKdf(kdf: { kdf: number; kdfIterations: number; kdfMemory: number | null; kdfParallelism: number | null }): void {
+function validateKdf(kdf: {
+  kdf: number;
+  kdfIterations: number;
+  kdfMemory: number | null;
+  kdfParallelism: number | null;
+}): void {
   if (kdf.kdf === KdfType.Pbkdf2) {
     if (kdf.kdfIterations < 100_000 || kdf.kdfIterations > 2_000_000) {
       err('PBKDF2 KDF iterations must be between 100000 and 2000000.');
     }
   } else if (kdf.kdf === KdfType.Argon2id) {
-    if (kdf.kdfIterations < 1 || kdf.kdfIterations > 10) err('Argon2 KDF iterations must be between 1 and 10.');
+    if (kdf.kdfIterations < 1 || kdf.kdfIterations > 10)
+      err('Argon2 KDF iterations must be between 1 and 10.');
     if (kdf.kdfMemory == null || kdf.kdfMemory < 15 || kdf.kdfMemory > 1024) {
       err('Argon2 memory must be between 15 MB and 1024 MB.');
     }

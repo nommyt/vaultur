@@ -91,7 +91,9 @@ authRequestRoutes.post('/auth-requests', async (c) => {
   if (!user) err("AuthRequest doesn't exist");
 
   const deviceTypeHeader = Number.parseInt(c.req.header('Device-Type') ?? '', 10);
-  const deviceType = Number.isFinite(deviceTypeHeader) ? deviceTypeHeader : DeviceType.UnknownBrowser;
+  const deviceType = Number.isFinite(deviceTypeHeader)
+    ? deviceTypeHeader
+    : DeviceType.UnknownBrowser;
 
   const ar: AuthRequest = {
     uuid: uuid(),
@@ -112,7 +114,11 @@ authRequestRoutes.post('/auth-requests', async (c) => {
   };
   await db.insert(authRequests).values(ar);
 
-  new Notify(c.env, c.get('config'), c.executionCtx).authRequest(user.uuid, ar.uuid, deviceIdentifier);
+  new Notify(c.env, c.get('config'), c.executionCtx).authRequest(
+    user.uuid,
+    ar.uuid,
+    deviceIdentifier,
+  );
   await logUserEvent(db, EventType.UserLoggedIn, user.uuid, deviceType, c.get('ip'));
 
   return c.json(authRequestJson(ar, c.get('config').domain, { includeKey: false }));
@@ -121,7 +127,9 @@ authRequestRoutes.post('/auth-requests', async (c) => {
 authRequestRoutes.get('/auth-requests/:id/response', async (c) => {
   const db = c.get('db');
   const code = c.req.query('code') ?? '';
-  const ar = await db.query.authRequests.findFirst({ where: eq(authRequests.uuid, c.req.param('id')) });
+  const ar = await db.query.authRequests.findFirst({
+    where: eq(authRequests.uuid, c.req.param('id')),
+  });
   if (!ar || isExpired(ar) || !constantTimeEqualStr(ar.accessCode, code)) {
     notFound("AuthRequest doesn't exist");
   }
@@ -142,7 +150,9 @@ authRequestRoutes.get('/auth-requests', async (c) => {
   });
   const domain = c.get('config').domain;
   return c.json({
-    data: rows.filter((ar) => !isExpired(ar)).map((ar) => authRequestJson(ar, domain, { includeKey: true })),
+    data: rows
+      .filter((ar) => !isExpired(ar))
+      .map((ar) => authRequestJson(ar, domain, { includeKey: true })),
     object: 'list',
     continuationToken: null,
   });
@@ -186,9 +196,15 @@ authRequestRoutes.put('/auth-requests/:id', async (c) => {
     .where(eq(authRequests.uuid, ar.uuid));
 
   if (requestApproved) {
-    new Notify(c.env, c.get('config'), c.executionCtx).authRequestResponse(user.uuid, ar.uuid, deviceIdentifier);
+    new Notify(c.env, c.get('config'), c.executionCtx).authRequestResponse(
+      user.uuid,
+      ar.uuid,
+      deviceIdentifier,
+    );
   }
 
-  const updated = (await db.query.authRequests.findFirst({ where: eq(authRequests.uuid, ar.uuid) }))!;
+  const updated = (await db.query.authRequests.findFirst({
+    where: eq(authRequests.uuid, ar.uuid),
+  }))!;
   return c.json(authRequestJson(updated, c.get('config').domain, { includeKey: true }));
 });

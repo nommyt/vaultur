@@ -51,7 +51,9 @@ describe('organizations', () => {
     const org = await createOrg(token);
 
     // Default collection exists
-    let cols = (await (await api(token, 'GET', `/api/organizations/${org.id}/collections`)).json()) as Record<string, any>;
+    let cols = (await (
+      await api(token, 'GET', `/api/organizations/${org.id}/collections`)
+    ).json()) as Record<string, any>;
     expect(cols.data).toHaveLength(1);
     expect(cols.data[0].object).toBe('collectionDetails');
 
@@ -70,26 +72,33 @@ describe('organizations', () => {
     expect(((await renamed.json()) as Record<string, any>).name).toBe('2.renamedCollection|iv==');
 
     // List now has 2
-    cols = (await (await api(token, 'GET', `/api/organizations/${org.id}/collections`)).json()) as Record<string, any>;
+    cols = (await (
+      await api(token, 'GET', `/api/organizations/${org.id}/collections`)
+    ).json()) as Record<string, any>;
     expect(cols.data).toHaveLength(2);
 
     // Delete
-    expect((await api(token, 'DELETE', `/api/organizations/${org.id}/collections/${col.id}`)).status).toBe(200);
-    cols = (await (await api(token, 'GET', `/api/organizations/${org.id}/collections`)).json()) as Record<string, any>;
+    expect(
+      (await api(token, 'DELETE', `/api/organizations/${org.id}/collections/${col.id}`)).status,
+    ).toBe(200);
+    cols = (await (
+      await api(token, 'GET', `/api/organizations/${org.id}/collections`)
+    ).json()) as Record<string, any>;
     expect(cols.data).toHaveLength(1);
   });
 
   it('shares a personal cipher into the org and lists it in org details', async () => {
     const { access_token: token } = await registerAndLogin();
     const org = await createOrg(token);
-    const cols = (await (await api(token, 'GET', `/api/organizations/${org.id}/collections`)).json()) as Record<
-      string,
-      any
-    >;
+    const cols = (await (
+      await api(token, 'GET', `/api/organizations/${org.id}/collections`)
+    ).json()) as Record<string, any>;
     const collectionId = cols.data[0].id;
 
     // Create a personal cipher, then share it
-    const cipher = (await (await api(token, 'POST', '/api/ciphers', LOGIN_CIPHER)).json()) as Record<string, any>;
+    const cipher = (await (
+      await api(token, 'POST', '/api/ciphers', LOGIN_CIPHER)
+    ).json()) as Record<string, any>;
     const share = await api(token, 'PUT', `/api/ciphers/${cipher.id}/share`, {
       cipher: { ...LOGIN_CIPHER, organizationId: org.id },
       collectionIds: [collectionId],
@@ -100,17 +109,18 @@ describe('organizations', () => {
     expect(shared.collectionIds).toContain(collectionId);
 
     // Org details lists it
-    const details = (await (await api(token, 'GET', `/api/organizations/${org.id}/details`)).json()) as Record<
-      string,
-      any
-    >;
+    const details = (await (
+      await api(token, 'GET', `/api/organizations/${org.id}/details`)
+    ).json()) as Record<string, any>;
     expect(details.data.some((cph: any) => cph.id === cipher.id)).toBe(true);
   });
 
   it('returns organization keys', async () => {
     const { access_token: token } = await registerAndLogin();
     const org = await createOrg(token);
-    const keys = (await (await api(token, 'GET', `/api/organizations/${org.id}/keys`)).json()) as Record<string, any>;
+    const keys = (await (
+      await api(token, 'GET', `/api/organizations/${org.id}/keys`)
+    ).json()) as Record<string, any>;
     expect(keys.object).toBe('organizationKeys');
     expect(keys.publicKey).toBe(ORG.keys.publicKey);
     expect(keys.privateKey).toBe(ORG.keys.encryptedPrivateKey);
@@ -122,7 +132,9 @@ describe('organizations', () => {
 
     const leave = await api(token, 'POST', `/api/organizations/${org.id}/leave`);
     expect(leave.status).toBe(400);
-    expect(((await leave.json()) as Record<string, any>).errorModel.message).toContain('last owner');
+    expect(((await leave.json()) as Record<string, any>).errorModel.message).toContain(
+      'last owner',
+    );
 
     // Delete requires the master password
     const badDelete = await api(token, 'POST', `/api/organizations/${org.id}/delete`, {

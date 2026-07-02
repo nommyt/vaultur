@@ -6,7 +6,11 @@ import { errCode } from '../error';
  * KV is eventually consistent, so this is a soft limit — good enough to slow
  * credential stuffing; strict limits should also use Cloudflare WAF rules.
  */
-export async function checkLoginRateLimit(kv: KVNamespace, config: Config, ip: string): Promise<void> {
+export async function checkLoginRateLimit(
+  kv: KVNamespace,
+  config: Config,
+  ip: string,
+): Promise<void> {
   const windowSeconds = 60;
   const key = `ratelimit:login:${ip}:${Math.floor(Date.now() / 1000 / windowSeconds)}`;
   const current = Number((await kv.get(key)) ?? '0');

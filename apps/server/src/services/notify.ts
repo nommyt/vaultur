@@ -32,7 +32,11 @@ function withVarintLength(body: Uint8Array): Uint8Array {
   return out;
 }
 
-function buildFrame(ut: UpdateType, payload: Map<string, unknown>, actingDeviceId: string | null): Uint8Array {
+function buildFrame(
+  ut: UpdateType,
+  payload: Map<string, unknown>,
+  actingDeviceId: string | null,
+): Uint8Array {
   const arg = new Map<string, unknown>([
     ['ContextId', actingDeviceId],
     ['Type', ut],
@@ -63,13 +67,20 @@ export class Notify {
   private dispatch(userUuids: string[], frame: Uint8Array, push?: () => Promise<void>): void {
     this.ctx.waitUntil(
       (async () => {
-        await Promise.all(userUuids.map((u) => this.broadcast(u, frame).catch((e) => console.error('notify', e))));
+        await Promise.all(
+          userUuids.map((u) => this.broadcast(u, frame).catch((e) => console.error('notify', e))),
+        );
         if (push && this.config.pushEnabled) await push().catch((e) => console.error('push', e));
       })(),
     );
   }
 
-  cipherUpdate(ut: UpdateType, cipher: Cipher, userUuids: string[], actingDeviceId: string | null): void {
+  cipherUpdate(
+    ut: UpdateType,
+    cipher: Cipher,
+    userUuids: string[],
+    actingDeviceId: string | null,
+  ): void {
     const payload = new Map<string, unknown>([
       ['Id', cipher.uuid],
       ['UserId', cipher.userUuid],
@@ -164,7 +175,11 @@ export class Notify {
     );
   }
 
-  authRequestResponse(userUuid: string, authRequestUuid: string, approvingDeviceId: string | null): void {
+  authRequestResponse(
+    userUuid: string,
+    authRequestUuid: string,
+    approvingDeviceId: string | null,
+  ): void {
     const payload = new Map<string, unknown>([
       ['Id', authRequestUuid],
       ['UserId', userUuid],
@@ -183,7 +198,9 @@ export class Notify {
     // The requesting (still unauthenticated) device listens on the anonymous
     // hub keyed by the auth-request id (vaultwarden's AnonymousNotify).
     this.ctx.waitUntil(
-      this.broadcast(`anon:${authRequestUuid}`, frame).catch((e) => console.error('anon notify', e)),
+      this.broadcast(`anon:${authRequestUuid}`, frame).catch((e) =>
+        console.error('anon notify', e),
+      ),
     );
   }
 }

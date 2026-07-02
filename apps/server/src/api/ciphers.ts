@@ -48,7 +48,13 @@ type Ctx = Context<AppEnv>;
 
 async function jsonOptions(c: Ctx, userUuid: string) {
   const sync = await loadCipherSyncData(c.get('db'), userUuid, 'user');
-  return { config: c.get('config'), secret: c.env.JWT_SECRET, userUuid, sync, syncType: 'user' as const };
+  return {
+    config: c.get('config'),
+    secret: c.env.JWT_SECRET,
+    userUuid,
+    sync,
+    syncType: 'user' as const,
+  };
 }
 
 async function loadCipher(c: Ctx, id: string | undefined): Promise<Cipher> {
@@ -58,7 +64,11 @@ async function loadCipher(c: Ctx, id: string | undefined): Promise<Cipher> {
   return row;
 }
 
-async function loadAccessibleCipher(c: Ctx, id: string | undefined, write: boolean): Promise<Cipher> {
+async function loadAccessibleCipher(
+  c: Ctx,
+  id: string | undefined,
+  write: boolean,
+): Promise<Cipher> {
   const { user } = auth(c);
   const cipher = await loadCipher(c, id);
   const sync = await loadCipherSyncData(c.get('db'), user.uuid, 'user');
@@ -116,18 +126,31 @@ async function createCipher(c: Ctx, data: CipherData, collectionIds?: string[]) 
   const db = c.get('db');
 
   const cipher = newCipherShell(data.type, data.name);
-  await updateCipherFromData(cipher, data, { db, userUuid: user.uuid }, {
-    sharedToCollections: collectionIds,
-    skipRevisionCheck: true,
-  });
+  await updateCipherFromData(
+    cipher,
+    data,
+    { db, userUuid: user.uuid },
+    {
+      sharedToCollections: collectionIds,
+      skipRevisionCheck: true,
+    },
+  );
 
   if (cipher.organizationUuid && collectionIds && collectionIds.length > 0) {
     const validCollections = await db
       .select({ uuid: collections.uuid })
       .from(collections)
-      .where(and(inArray(collections.uuid, collectionIds), eq(collections.orgUuid, cipher.organizationUuid)));
+      .where(
+        and(
+          inArray(collections.uuid, collectionIds),
+          eq(collections.orgUuid, cipher.organizationUuid),
+        ),
+      );
     for (const col of validCollections) {
-      await db.insert(ciphersCollections).values({ cipherUuid: cipher.uuid, collectionUuid: col.uuid }).onConflictDoNothing();
+      await db
+        .insert(ciphersCollections)
+        .values({ cipherUuid: cipher.uuid, collectionUuid: col.uuid })
+        .onConflictDoNothing();
     }
     await logOrgEvent(db, {
       eventType: EventType.CipherCreated,
@@ -157,7 +180,10 @@ cipherRoutes.post('/ciphers', async (c) => {
 // POST /ciphers/create — { cipher, collectionIds } org-aware create
 cipherRoutes.post('/ciphers/create', async (c) => {
   const body = (await c.req.json()) as Record<string, unknown>;
-  const cipherBody = (ci<Record<string, unknown>>(body, 'cipher') ?? body) as Record<string, unknown>;
+  const cipherBody = (ci<Record<string, unknown>>(body, 'cipher') ?? body) as Record<
+    string,
+    unknown
+  >;
   const collectionIds = ci<string[]>(body, 'collectionIds') ?? [];
   const data = parseCipherData(cipherBody);
   if (data.organizationId && collectionIds.length === 0) {
@@ -208,7 +234,7 @@ async function partialUpdate(c: Ctx) {
     const folder = await db.query.folders.findFirst({
       where: and(eq(folders.uuid, folderId), eq(folders.userUuid, user.uuid)),
     });
-    if (!folder) err('Folder doesn\'t exist');
+    if (!folder) err("Folder doesn't exist");
   }
 
   await moveToFolder(db, cipher.uuid, folderId, user.uuid);
@@ -250,7 +276,13 @@ cipherRoutes.post('/ciphers/import', async (c) => {
       }
     }
     const now = nowDb();
-    const folder = { uuid: uuid(), createdAt: now, updatedAt: now, userUuid: user.uuid, name: String(ci(f, 'name') ?? '') };
+    const folder = {
+      uuid: uuid(),
+      createdAt: now,
+      updatedAt: now,
+      userUuid: user.uuid,
+      name: String(ci(f, 'name') ?? ''),
+    };
     await db.insert(folders).values(folder);
     folderIds.push(folder.uuid);
   }
@@ -265,7 +297,12 @@ cipherRoutes.post('/ciphers/import', async (c) => {
     // vaultwarden skips the revision check on import
     data.lastKnownRevisionDate = null;
     const cipher = newCipherShell(data.type, data.name);
-    await updateCipherFromData(cipher, data, { db, userUuid: user.uuid, sync }, { skipRevisionCheck: true });
+    await updateCipherFromData(
+      cipher,
+      data,
+      { db, userUuid: user.uuid, sync },
+      { skipRevisionCheck: true },
+    );
   }
 
   await touchUser(db, user.uuid);
@@ -295,14 +332,24 @@ async function shareCipher(c: Ctx, cipherId: string, body: Record<string, unknow
   const validCollections = await db
     .select({ uuid: collections.uuid })
     .from(collections)
-    .where(and(inArray(collections.uuid, collectionIds), eq(collections.orgUuid, data.organizationId!)));
+    .where(
+      and(inArray(collections.uuid, collectionIds), eq(collections.orgUuid, data.organizationId!)),
+    );
   if (validCollections.length === 0) err('No valid collections provided');
 
-  await updateCipherFromData(cipher, data, { db, userUuid: user.uuid }, { sharedToCollections: collectionIds });
+  await updateCipherFromData(
+    cipher,
+    data,
+    { db, userUuid: user.uuid },
+    { sharedToCollections: collectionIds },
+  );
 
   await db.delete(ciphersCollections).where(eq(ciphersCollections.cipherUuid, cipher.uuid));
   for (const col of validCollections) {
-    await db.insert(ciphersCollections).values({ cipherUuid: cipher.uuid, collectionUuid: col.uuid }).onConflictDoNothing();
+    await db
+      .insert(ciphersCollections)
+      .values({ cipherUuid: cipher.uuid, collectionUuid: col.uuid })
+      .onConflictDoNothing();
   }
 
   const affected = await usersWithCipherAccess(db, cipher);
@@ -353,9 +400,12 @@ async function updateCipherCollections(c: Ctx) {
   const collectionIds = new Set(ci<string[]>(body, 'collectionIds') ?? []);
 
   const current = new Set(
-    (await db.select().from(ciphersCollections).where(eq(ciphersCollections.cipherUuid, cipher.uuid))).map(
-      (r) => r.collectionUuid,
-    ),
+    (
+      await db
+        .select()
+        .from(ciphersCollections)
+        .where(eq(ciphersCollections.cipherUuid, cipher.uuid))
+    ).map((r) => r.collectionUuid),
   );
 
   const sync = await loadCipherSyncData(db, user.uuid, 'user');
@@ -366,15 +416,25 @@ async function updateCipherCollections(c: Ctx) {
     if (!col || col.orgUuid !== cipher.organizationUuid) continue;
     // Only allow changing collections the user can access
     const accessible =
-      (member && hasFullAccess(member)) || sync.userCollections.has(target) || sync.userCollectionsGroups.has(target);
+      (member && hasFullAccess(member)) ||
+      sync.userCollections.has(target) ||
+      sync.userCollectionsGroups.has(target);
     if (!accessible) continue;
 
     if (collectionIds.has(target) && !current.has(target)) {
-      await db.insert(ciphersCollections).values({ cipherUuid: cipher.uuid, collectionUuid: target }).onConflictDoNothing();
+      await db
+        .insert(ciphersCollections)
+        .values({ cipherUuid: cipher.uuid, collectionUuid: target })
+        .onConflictDoNothing();
     } else if (!collectionIds.has(target) && current.has(target)) {
       await db
         .delete(ciphersCollections)
-        .where(and(eq(ciphersCollections.cipherUuid, cipher.uuid), eq(ciphersCollections.collectionUuid, target)));
+        .where(
+          and(
+            eq(ciphersCollections.cipherUuid, cipher.uuid),
+            eq(ciphersCollections.collectionUuid, target),
+          ),
+        );
     }
   }
 
@@ -407,7 +467,10 @@ async function softDelete(c: Ctx, cipher: Cipher) {
   const { user, device } = auth(c);
   cipher.deletedAt = nowDb();
   cipher.updatedAt = cipher.deletedAt;
-  await db.update(ciphers).set({ deletedAt: cipher.deletedAt, updatedAt: cipher.updatedAt }).where(eq(ciphers.uuid, cipher.uuid));
+  await db
+    .update(ciphers)
+    .set({ deletedAt: cipher.deletedAt, updatedAt: cipher.updatedAt })
+    .where(eq(ciphers.uuid, cipher.uuid));
   const affected = await updateUsersRevisionForCipher(db, cipher);
   notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid);
   if (cipher.organizationUuid) {
@@ -445,7 +508,10 @@ async function restore(c: Ctx, cipher: Cipher) {
   const { user, device } = auth(c);
   cipher.deletedAt = null;
   cipher.updatedAt = nowDb();
-  await db.update(ciphers).set({ deletedAt: null, updatedAt: cipher.updatedAt }).where(eq(ciphers.uuid, cipher.uuid));
+  await db
+    .update(ciphers)
+    .set({ deletedAt: null, updatedAt: cipher.updatedAt })
+    .where(eq(ciphers.uuid, cipher.uuid));
   const affected = await updateUsersRevisionForCipher(db, cipher);
   notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid);
   if (cipher.organizationUuid) {
@@ -553,7 +619,9 @@ async function setArchived(c: Ctx, ids: string[], archived: boolean) {
         .values({ userUuid: user.uuid, cipherUuid: cipher.uuid, archivedAt: nowDb() })
         .onConflictDoNothing();
     } else {
-      await db.delete(archives).where(and(eq(archives.userUuid, user.uuid), eq(archives.cipherUuid, cipher.uuid)));
+      await db
+        .delete(archives)
+        .where(and(eq(archives.userUuid, user.uuid), eq(archives.cipherUuid, cipher.uuid)));
     }
     await db.update(ciphers).set({ updatedAt: nowDb() }).where(eq(ciphers.uuid, cipher.uuid));
   }
@@ -628,7 +696,8 @@ cipherRoutes.post('/ciphers/purge', async (c) => {
   const orgId = c.req.query('organizationId');
   if (orgId) {
     const member = await findConfirmedMembership(db, user.uuid, orgId);
-    if (!member || !hasFullAccess(member)) err('You do not have permission to purge the organization vault');
+    if (!member || !hasFullAccess(member))
+      err('You do not have permission to purge the organization vault');
     const orgCiphers = await db.select().from(ciphers).where(eq(ciphers.organizationUuid, orgId));
     for (const cipher of orgCiphers) await deleteCipher(db, c.env.FILES, cipher);
     await logOrgEvent(db, {

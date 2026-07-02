@@ -26,7 +26,9 @@ deviceRoutes.get('/devices/knowndevice', async (c) => {
   let email: string;
   try {
     const normalized = emailB64.replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
-    email = new TextDecoder().decode(b64Decode(normalized + '='.repeat((4 - (normalized.length % 4)) % 4)));
+    email = new TextDecoder().decode(
+      b64Decode(normalized + '='.repeat((4 - (normalized.length % 4)) % 4)),
+    );
   } catch {
     err('X-Request-Email value failed to decode as base64url');
   }
@@ -95,7 +97,9 @@ async function putToken(c: Ctx) {
   const config = c.get('config');
   if (config.pushEnabled) {
     c.executionCtx.waitUntil(
-      registerPushDevice(c.env, config, { ...row, pushToken }).catch((e) => console.error('push register', e)),
+      registerPushDevice(c.env, config, { ...row, pushToken }).catch((e) =>
+        console.error('push register', e),
+      ),
     );
   }
   return c.body(null, 200);
@@ -121,6 +125,8 @@ deviceRoutes.put('/devices/identifier/:id/clear-token', clearToken);
 deviceRoutes.delete('/devices/:id', async (c) => {
   const { user } = auth(c);
   const db = c.get('db');
-  await db.delete(devices).where(and(eq(devices.uuid, c.req.param('id')), eq(devices.userUuid, user.uuid)));
+  await db
+    .delete(devices)
+    .where(and(eq(devices.uuid, c.req.param('id')), eq(devices.userUuid, user.uuid)));
   return c.body(null, 200);
 });

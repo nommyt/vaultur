@@ -69,7 +69,10 @@ export function isValidEmail(email: string): boolean {
 }
 
 /** Parse a JSON body that may use PascalCase or camelCase keys (older/newer clients). */
-export function ci<T = unknown>(obj: Record<string, unknown> | null | undefined, key: string): T | undefined {
+export function ci<T = unknown>(
+  obj: Record<string, unknown> | null | undefined,
+  key: string,
+): T | undefined {
   if (!obj) return undefined;
   if (key in obj) return obj[key] as T;
   const pascal = key.charAt(0).toUpperCase() + key.slice(1);

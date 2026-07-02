@@ -15,10 +15,15 @@ type Ctx = Context<AppEnv>;
 
 async function verifyAccessToken(c: Ctx): Promise<LoginJwtClaims> {
   const header = c.req.header('Authorization') ?? '';
-  const token = c.req.query('access_token') ?? (header.startsWith('Bearer ') ? header.slice(7) : '');
+  const token =
+    c.req.query('access_token') ?? (header.startsWith('Bearer ') ? header.slice(7) : '');
   if (!token) unauthorized('Missing access token');
   try {
-    return await decodeJwt<LoginJwtClaims>(c.env.JWT_SECRET, token, issuer(c.get('config').domain, 'login'));
+    return await decodeJwt<LoginJwtClaims>(
+      c.env.JWT_SECRET,
+      token,
+      issuer(c.get('config').domain, 'login'),
+    );
   } catch {
     unauthorized('Invalid claim');
   }

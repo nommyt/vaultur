@@ -56,7 +56,8 @@ export function parseCipherData(body: Record<string, unknown>): CipherData {
   return {
     id: ci<string>(body, 'id'),
     folderId: folderIdRaw === '' ? null : folderIdRaw,
-    organizationId: ci<string>(body, 'organizationId') ?? ci<string>(body, 'organizationID') ?? null,
+    organizationId:
+      ci<string>(body, 'organizationId') ?? ci<string>(body, 'organizationID') ?? null,
     key: ci<string>(body, 'key') ?? null,
     type: Number(ci(body, 'type') ?? 0),
     name: String(ci(body, 'name') ?? ''),
@@ -112,7 +113,9 @@ export async function enforcePersonalOwnershipPolicy(
     (r) => r.status >= MembershipStatus.Accepted && !isAtLeast(r.atype, MembershipType.Admin),
   );
   if (applies) {
-    err('Due to an Enterprise Policy, you are restricted from saving items to your personal vault.');
+    err(
+      'Due to an Enterprise Policy, you are restricted from saving items to your personal vault.',
+    );
   }
 }
 
@@ -168,7 +171,9 @@ export async function updateCipherFromData(
   }
 
   if (data.notes && data.notes.length > MAX_NOTE_SIZE) {
-    err(`The field Notes exceeds the maximum encrypted value length of ${MAX_NOTE_SIZE} characters.`);
+    err(
+      `The field Notes exceeds the maximum encrypted value length of ${MAX_NOTE_SIZE} characters.`,
+    );
   }
 
   const sync = ctx.sync ?? (await loadCipherSyncData(db, userUuid, 'user'));
@@ -179,8 +184,8 @@ export async function updateCipherFromData(
     const writable =
       options.sharedToCollections !== undefined ||
       hasFullAccess(member) ||
-      (cipher.userUuid === userUuid ||
-        (getAccessRestrictions(cipher, userUuid, sync)?.readOnly === false));
+      cipher.userUuid === userUuid ||
+      getAccessRestrictions(cipher, userUuid, sync)?.readOnly === false;
     if (!writable) err("You don't have permission to add cipher directly to organization");
     cipher.organizationUuid = data.organizationId;
     cipher.userUuid = null;
@@ -228,7 +233,8 @@ export async function updateCipherFromData(
   cipher.notes = data.notes ?? null;
   cipher.fields = data.fields != null ? JSON.stringify(stripResponseKey(data.fields)) : null;
   cipher.data = JSON.stringify(typeData);
-  cipher.passwordHistory = data.passwordHistory != null ? JSON.stringify(data.passwordHistory) : null;
+  cipher.passwordHistory =
+    data.passwordHistory != null ? JSON.stringify(data.passwordHistory) : null;
   cipher.reprompt = data.reprompt === 0 || data.reprompt === 1 ? data.reprompt : null;
   cipher.updatedAt = nowDb();
 
@@ -273,7 +279,12 @@ export async function moveToFolder(
     if (row.folderUuid === folderUuid) return;
     await db
       .delete(foldersCiphers)
-      .where(and(eq(foldersCiphers.cipherUuid, cipherUuid), eq(foldersCiphers.folderUuid, row.folderUuid)));
+      .where(
+        and(
+          eq(foldersCiphers.cipherUuid, cipherUuid),
+          eq(foldersCiphers.folderUuid, row.folderUuid),
+        ),
+      );
   }
   if (folderUuid) {
     await db.insert(foldersCiphers).values({ cipherUuid, folderUuid }).onConflictDoNothing();
@@ -290,7 +301,9 @@ export async function setFavorite(
   if (favorite) {
     await db.insert(favorites).values({ userUuid, cipherUuid }).onConflictDoNothing();
   } else {
-    await db.delete(favorites).where(and(eq(favorites.userUuid, userUuid), eq(favorites.cipherUuid, cipherUuid)));
+    await db
+      .delete(favorites)
+      .where(and(eq(favorites.userUuid, userUuid), eq(favorites.cipherUuid, cipherUuid)));
   }
 }
 

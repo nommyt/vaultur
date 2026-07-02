@@ -36,7 +36,13 @@ syncRoutes.get('/sync', async (c) => {
   const showSshKeys = clientVersion ? gteVersion(clientVersion, [2024, 12, 0]) : false;
   if (!showSshKeys) ciphers = ciphers.filter((ci) => ci.atype !== 5);
 
-  const opts = { config, secret: c.env.JWT_SECRET, userUuid: user.uuid, sync, syncType: 'user' as const };
+  const opts = {
+    config,
+    secret: c.env.JWT_SECRET,
+    userUuid: user.uuid,
+    sync,
+    syncType: 'user' as const,
+  };
   const ciphersJson = await Promise.all(ciphers.map((ci) => cipherToJson(ci, opts)));
 
   const collections = await findCollectionsForUser(db, user.uuid, sync);

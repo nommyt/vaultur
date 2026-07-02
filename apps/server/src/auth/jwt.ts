@@ -67,7 +67,13 @@ interface BasicClaimsInput {
   extra?: Record<string, unknown>;
 }
 
-export function basicClaims({ domain, kind, sub, ttlSeconds, extra }: BasicClaimsInput): JWTPayload {
+export function basicClaims({
+  domain,
+  kind,
+  sub,
+  ttlSeconds,
+  extra,
+}: BasicClaimsInput): JWTPayload {
   const now = Math.floor(Date.now() / 1000);
   return {
     nbf: now,

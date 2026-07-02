@@ -92,17 +92,17 @@ Point any Bitwarden client (mobile / extension / desktop / CLI) at
 
 All vars live in `wrangler.jsonc` (`vars`) — see comments there. Highlights:
 
-| Var | Default | Meaning |
-| --- | --- | --- |
-| `DOMAIN` | request origin | Public origin used in links/JWT issuer |
-| `SIGNUPS_ALLOWED` | `true` | Open registration |
-| `SIGNUPS_DOMAINS_WHITELIST` | — | CSV of email domains allowed to sign up |
-| `SIGNUPS_VERIFY` | `false` | Require email verification before login |
-| `ORG_CREATION_USERS` | `all` | `all`, `none`, or CSV of emails |
-| `PASSWORD_ITERATIONS` | `600000` | Server-side PBKDF2 rounds |
-| `TRASH_AUTO_DELETE_DAYS` | `30` | Purge window for soft-deleted items |
-| `PUSH_ENABLED` + installation id/key | `false` | Mobile push relay (get credentials at bitwarden.com/host) |
-| `ICON_CACHE_TTL_SECONDS` | 30 days | KV icon cache TTL |
+| Var                                  | Default        | Meaning                                                   |
+| ------------------------------------ | -------------- | --------------------------------------------------------- |
+| `DOMAIN`                             | request origin | Public origin used in links/JWT issuer                    |
+| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                         |
+| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                   |
+| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before login                   |
+| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails                           |
+| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds                                 |
+| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Purge window for soft-deleted items                       |
+| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay (get credentials at bitwarden.com/host) |
+| `ICON_CACHE_TTL_SECONDS`             | 30 days        | KV icon cache TTL                                         |
 
 ## Local development
 

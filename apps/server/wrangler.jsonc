@@ -60,7 +60,7 @@
   // ---------------------------------------------------------------------
   "send_email": [
     {
-      "name": "EMAIL",
+      "name": "EMAIL"
       // Optionally lock the sender: "allowed_sender_addresses": ["vault@example.com"]
     }
   ],
@@ -73,7 +73,16 @@
     "binding": "ASSETS",
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash",
-    "run_worker_first": ["/api/*", "/identity/*", "/notifications/*", "/icons/*", "/admin", "/admin/*", "/events/*", "/alive"]
+    "run_worker_first": [
+      "/api/*",
+      "/identity/*",
+      "/notifications/*",
+      "/icons/*",
+      "/admin",
+      "/admin/*",
+      "/events/*",
+      "/alive"
+    ]
   },
 
   // Scheduled jobs: trash purge, send purge, expired auth requests, incomplete 2FA alerts

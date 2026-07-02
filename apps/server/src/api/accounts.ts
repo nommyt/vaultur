@@ -20,7 +20,13 @@ import { err, errCode, notFound, unauthorized } from '../error';
 import { verifyPassword } from '../crypto';
 import { basicClaims, decodeJwt, encodeJwt, issuer } from '../auth/jwt';
 import { ci, normalizeEmail, randomNumericCode, uuid } from '../util';
-import { findUserByEmail, generateApiKey, passwordFields, stampException, touchUser } from '../services/users';
+import {
+  findUserByEmail,
+  generateApiKey,
+  passwordFields,
+  stampException,
+  touchUser,
+} from '../services/users';
 import { createMailer, mail } from '../services/mail';
 import { masterPasswordPolicy } from '../services/policies';
 import { profileJson } from '../services/vault';
@@ -68,13 +74,17 @@ accountRoutes.post('/accounts/verify-email-token', async (c) => {
   const db = c.get('db');
   const config = c.get('config');
   try {
-    const claims = await decodeJwt<{ sub: string }>(c.env.JWT_SECRET, token, issuer(config.domain, 'verifyemail'));
+    const claims = await decodeJwt<{ sub: string }>(
+      c.env.JWT_SECRET,
+      token,
+      issuer(config.domain, 'verifyemail'),
+    );
     if (claims.sub !== userId) err('Invalid claim');
   } catch {
     err('Invalid claim');
   }
   const user = await db.query.users.findFirst({ where: eq(users.uuid, userId) });
-  if (!user) err('User doesn\'t exist');
+  if (!user) err("User doesn't exist");
   await db
     .update(users)
     .set({ verifiedAt: nowDb(), lastVerifyingAt: null, loginVerifyCount: 0, updatedAt: nowDb() })
@@ -110,13 +120,17 @@ accountRoutes.post('/accounts/delete-recover-token', async (c) => {
   const db = c.get('db');
   const config = c.get('config');
   try {
-    const claims = await decodeJwt<{ sub: string }>(c.env.JWT_SECRET, token, issuer(config.domain, 'delete'));
+    const claims = await decodeJwt<{ sub: string }>(
+      c.env.JWT_SECRET,
+      token,
+      issuer(config.domain, 'delete'),
+    );
     if (claims.sub !== userId) err('Invalid claim');
   } catch {
     err('Invalid claim');
   }
   const user = await db.query.users.findFirst({ where: eq(users.uuid, userId) });
-  if (!user) err('User doesn\'t exist');
+  if (!user) err("User doesn't exist");
   await db.delete(users).where(eq(users.uuid, userId));
   return c.body(null, 200);
 });
@@ -128,7 +142,11 @@ accountRoutes.use('*', requireAuth);
 // PasswordOrOtp verification (vaultwarden PasswordOrOtpData)
 // ---------------------------------------------------------------------------
 
-async function validatePasswordOrOtp(c: Ctx, user: User, body: Record<string, unknown>): Promise<void> {
+async function validatePasswordOrOtp(
+  c: Ctx,
+  user: User,
+  body: Record<string, unknown>,
+): Promise<void> {
   const passwordHash = ci<string>(body, 'masterPasswordHash');
   const otp = ci<string>(body, 'otp');
   if (passwordHash) {
@@ -207,7 +225,7 @@ accountRoutes.put('/accounts/avatar', async (c) => {
 accountRoutes.get('/users/:id/public-key', async (c) => {
   const db = c.get('db');
   const target = await db.query.users.findFirst({ where: eq(users.uuid, c.req.param('id')) });
-  if (!target) notFound('User doesn\'t exist');
+  if (!target) notFound("User doesn't exist");
   return c.json({ userId: target.uuid, publicKey: target.publicKey, object: 'userKey' });
 });
 
@@ -314,7 +332,10 @@ accountRoutes.post('/accounts/security-stamp', async (c) => {
 
   const db = c.get('db');
   await db.delete(devices).where(eq(devices.userUuid, user.uuid));
-  await db.update(users).set({ securityStamp: uuid(), updatedAt: nowDb() }).where(eq(users.uuid, user.uuid));
+  await db
+    .update(users)
+    .set({ securityStamp: uuid(), updatedAt: nowDb() })
+    .where(eq(users.uuid, user.uuid));
   notifier(c).userUpdate(UpdateType.LogOut, user.uuid);
   return c.body(null, 200);
 });
@@ -419,7 +440,12 @@ accountRoutes.post('/accounts/verify-email', async (c) => {
   if (!mailer.enabled) err('Cannot verify email address');
   const token = await encodeJwt(
     c.env.JWT_SECRET,
-    basicClaims({ domain: config.domain, kind: 'verifyemail', sub: user.uuid, ttlSeconds: 5 * 24 * 3600 }),
+    basicClaims({
+      domain: config.domain,
+      kind: 'verifyemail',
+      sub: user.uuid,
+      ttlSeconds: 5 * 24 * 3600,
+    }),
   );
   c.executionCtx.waitUntil(mail.verifyEmail(mailer, config, user.email, user.uuid, token));
   return c.body(null, 200);
@@ -488,7 +514,8 @@ async function rotateKey(c: Ctx) {
       ? accountKeys
       : (ci<Record<string, unknown>>(accountKeys, 'publicKeyEncryptionKeyPair') ?? accountKeys);
     privateKey =
-      ci<string>(keyPair, 'wrappedPrivateKey') ?? ci<string>(accountKeys, 'userKeyEncryptedAccountPrivateKey');
+      ci<string>(keyPair, 'wrappedPrivateKey') ??
+      ci<string>(accountKeys, 'userKeyEncryptedAccountPrivateKey');
     cipherList = ci<Record<string, unknown>[]>(accountData, 'ciphers') ?? [];
     folderList = ci<Record<string, unknown>[]>(accountData, 'folders') ?? [];
   } else {
@@ -529,11 +556,19 @@ async function rotateKey(c: Ctx) {
     });
     if (!cipher) err('The cipher is not owned by the user');
     data.lastKnownRevisionDate = null;
-    await updateCipherFromData(cipher, data, { db, userUuid: user.uuid }, { skipRevisionCheck: true });
+    await updateCipherFromData(
+      cipher,
+      data,
+      { db, userUuid: user.uuid },
+      { skipRevisionCheck: true },
+    );
   }
 
   // Update sends
-  const sendList = ci<Record<string, unknown>[]>(body, 'sends') ?? ci<Record<string, unknown>[]>(accountData ?? {}, 'sends') ?? [];
+  const sendList =
+    ci<Record<string, unknown>[]>(body, 'sends') ??
+    ci<Record<string, unknown>[]>(accountData ?? {}, 'sends') ??
+    [];
   for (const s of sendList) {
     const id = ci<string>(s, 'id');
     const akey = ci<string>(s, 'key');

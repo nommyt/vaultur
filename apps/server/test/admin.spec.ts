@@ -1,0 +1,84 @@
+import { SELF } from 'cloudflare:test';
+import { describe, expect, it } from 'vitest';
+import { registerUser, login, api } from './helpers';
+
+// Test env sets ADMIN_TOKEN = 'vaultur-test-admin-token'
+const ADMIN_TOKEN = 'vaultur-test-admin-token';
+
+function adminGet(path: string, method = 'GET', body?: unknown) {
+  return SELF.fetch(`https://vault.test/admin${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+describe('admin API', () => {
+  it('rejects an invalid admin token', async () => {
+    const res = await SELF.fetch('https://vault.test/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'wrong' }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts a valid admin token and issues a session cookie', async () => {
+    const res = await SELF.fetch('https://vault.test/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: ADMIN_TOKEN }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Set-Cookie')).toContain('VAULTUR_ADMIN=');
+  });
+
+  it('accepts the admin token and lists users', async () => {
+    await registerUser();
+    const res = await adminGet('/users');
+    expect(res.status).toBe(200);
+    const users = (await res.json()) as Record<string, any>[];
+    expect(users.length).toBeGreaterThanOrEqual(1);
+    expect(users[0]!.object).toBe('adminUser');
+    expect(users[0]!.email).toBeTruthy();
+  });
+
+  it('disables and re-enables a user', async () => {
+    await registerUser();
+    const users = (await (await adminGet('/users')).json()) as Record<string, any>[];
+    const id = users[0]!.id;
+
+    expect((await adminGet(`/users/${id}/disable`, 'POST')).status).toBe(200);
+    // Disabled user cannot log in
+    const disabledLogin = await login();
+    expect(disabledLogin.status).toBe(400);
+    expect(((await disabledLogin.json()) as Record<string, any>).errorModel.message).toContain(
+      'disabled',
+    );
+
+    expect((await adminGet(`/users/${id}/enable`, 'POST')).status).toBe(200);
+    expect((await login()).status).toBe(200);
+  });
+
+  it('removes 2FA for a user', async () => {
+    await registerUser();
+    const users = (await (await adminGet('/users')).json()) as Record<string, any>[];
+    const id = users[0]!.id;
+    expect((await adminGet(`/users/${id}/remove-2fa`, 'POST')).status).toBe(200);
+  });
+
+  it('invites a new email and reports diagnostics', async () => {
+    const invite = await adminGet('/invite', 'POST', { email: 'invited@vaultur.dev' });
+    expect(invite.status).toBe(200);
+    expect(((await invite.json()) as Record<string, any>).email).toBe('invited@vaultur.dev');
+
+    const diag = (await (await adminGet('/diagnostics')).json()) as Record<string, any>;
+    expect(diag.dbType).toBe('d1');
+    expect(diag.running).toBe(true);
+  });
+
+  it('requires authentication for admin data routes', async () => {
+    const res = await SELF.fetch('https://vault.test/admin/users');
+    expect(res.status).toBe(401);
+  });
+});

@@ -6,7 +6,12 @@
   "overrides": [
     {
       "files": ["*.jsonc", "wrangler.jsonc"],
-      "options": { "parser": "json5", "quoteProps": "preserve", "singleQuote": false, "trailingComma": "none" }
+      "options": {
+        "parser": "json5",
+        "quoteProps": "preserve",
+        "singleQuote": false,
+        "trailingComma": "none"
+      }
     }
   ]
 }

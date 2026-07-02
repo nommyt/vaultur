@@ -58,7 +58,11 @@ export async function validateTotpCode(
 
   let totp: OTPAuth.TOTP;
   try {
-    totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret.toUpperCase()), digits: 6, period: 30 });
+    totp = new OTPAuth.TOTP({
+      secret: OTPAuth.Secret.fromBase32(secret.toUpperCase()),
+      digits: 6,
+      period: 30,
+    });
   } catch {
     err('Invalid TOTP secret');
   }
@@ -106,7 +110,10 @@ export async function sendEmailLoginToken(
   data.last_token = token;
   data.token_sent = nowDb();
   data.attempts = 0;
-  await db.update(twofactor).set({ data: JSON.stringify(data) }).where(eq(twofactor.uuid, record.uuid));
+  await db
+    .update(twofactor)
+    .set({ data: JSON.stringify(data) })
+    .where(eq(twofactor.uuid, record.uuid));
   await mail.twofactorEmail(mailer, config, data.email, token, ip);
 }
 
@@ -127,7 +134,10 @@ export async function validateEmailCode(
   if (!constantTimeEqualStr(tokenData.last_token, code)) {
     tokenData.attempts += 1;
     if (tokenData.attempts >= EMAIL_ATTEMPTS_LIMIT) tokenData.last_token = null;
-    await db.update(twofactor).set({ data: JSON.stringify(tokenData) }).where(eq(twofactor.uuid, record.uuid));
+    await db
+      .update(twofactor)
+      .set({ data: JSON.stringify(tokenData) })
+      .where(eq(twofactor.uuid, record.uuid));
     err('Token is invalid');
   }
 
@@ -138,7 +148,10 @@ export async function validateEmailCode(
 
   tokenData.last_token = null;
   tokenData.attempts = 0;
-  await db.update(twofactor).set({ data: JSON.stringify(tokenData) }).where(eq(twofactor.uuid, record.uuid));
+  await db
+    .update(twofactor)
+    .set({ data: JSON.stringify(tokenData) })
+    .where(eq(twofactor.uuid, record.uuid));
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +277,9 @@ export async function twofactorAuth(
     .onConflictDoNothing();
 
   const SUPPORTED = new Set<number>([TwoFactorType.Authenticator, TwoFactorType.Email]);
-  const providerIds = twofactors.filter((tf) => tf.enabled && SUPPORTED.has(tf.atype)).map((tf) => tf.atype);
+  const providerIds = twofactors
+    .filter((tf) => tf.enabled && SUPPORTED.has(tf.atype))
+    .map((tf) => tf.atype);
   if (providerIds.length === 0) {
     err('No enabled and usable two factor providers are available for this account');
   }
@@ -313,7 +328,10 @@ export async function twofactorAuth(
       break;
     }
     case TwoFactorType.RecoveryCode: {
-      if (!user.totpRecover || !constantTimeEqualStr(user.totpRecover.toLowerCase(), code.replace(/\s/g, '').toLowerCase())) {
+      if (
+        !user.totpRecover ||
+        !constantTimeEqualStr(user.totpRecover.toLowerCase(), code.replace(/\s/g, '').toLowerCase())
+      ) {
         err('Recovery code is incorrect. Try again.');
       }
       await db.delete(twofactor).where(eq(twofactor.userUuid, user.uuid));
@@ -327,7 +345,12 @@ export async function twofactorAuth(
 
   await db
     .delete(twofactorIncomplete)
-    .where(and(eq(twofactorIncomplete.userUuid, user.uuid), eq(twofactorIncomplete.deviceUuid, device.uuid)));
+    .where(
+      and(
+        eq(twofactorIncomplete.userUuid, user.uuid),
+        eq(twofactorIncomplete.deviceUuid, device.uuid),
+      ),
+    );
 
   if (data.twoFactorRemember === 1) {
     const token = await generateRememberToken(config, secret, device);
@@ -378,7 +401,10 @@ async function jsonErrTwofactor(
   };
 }
 
-function versionGte(version: string | undefined, [maj, min, pat]: [number, number, number]): boolean {
+function versionGte(
+  version: string | undefined,
+  [maj, min, pat]: [number, number, number],
+): boolean {
   if (!version) return false;
   const parts = version.split('.').map((p) => Number.parseInt(p, 10));
   const [a = 0, b = 0, c = 0] = parts;

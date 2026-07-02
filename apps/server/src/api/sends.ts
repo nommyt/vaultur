@@ -12,13 +12,27 @@ import {
   type Send,
   type User,
 } from '@vaultur/db';
-import { MembershipStatus, MembershipType, OrgPolicyType, SendType, UpdateType } from '@vaultur/shared';
+import {
+  MembershipStatus,
+  MembershipType,
+  OrgPolicyType,
+  SendType,
+  UpdateType,
+} from '@vaultur/shared';
 import type { AppEnv } from '../env';
 import { requireAuth, auth } from '../auth/middleware';
 import { err, errCode, notFound } from '../error';
 import { pbkdf2 } from '../crypto';
 import { basicClaims, decodeJwt, encodeJwt, issuer } from '../auth/jwt';
-import { b64Decode, b64Encode, ci, constantTimeEqual, randomAlphanum, randomBytes, uuid } from '../util';
+import {
+  b64Decode,
+  b64Encode,
+  ci,
+  constantTimeEqual,
+  randomAlphanum,
+  randomBytes,
+  uuid,
+} from '../util';
 import { sendToJson, sendAccessId, displaySize } from '../services/vault';
 import { isAtLeast } from '../services/memberships';
 import { touchUser } from '../services/users';
@@ -36,7 +50,9 @@ function fileKey(sendUuid: string, fileId: string): string {
 // Send password hashing (PBKDF2-100k like vaultwarden's Send::set_password)
 // ---------------------------------------------------------------------------
 
-async function hashSendPassword(password: string): Promise<{ hash: string; salt: string; iter: number }> {
+async function hashSendPassword(
+  password: string,
+): Promise<{ hash: string; salt: string; iter: number }> {
   const salt = randomBytes(64);
   const digest = await pbkdf2(new TextEncoder().encode(password), salt, 100_000);
   return { hash: b64Encode(digest), salt: b64Encode(salt), iter: 100_000 };
@@ -112,8 +128,13 @@ async function newSendFromData(db: Db, user: User, data: SendData): Promise<Send
   if (!data.key) err('Send data not provided');
   if (!data.deletionDate) err('Send data not provided');
   const deletion = new Date(data.deletionDate);
-  if (!Number.isFinite(deletion.getTime()) || deletion.getTime() > Date.now() + 31 * 24 * 3600 * 1000) {
-    err('You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again.');
+  if (
+    !Number.isFinite(deletion.getTime()) ||
+    deletion.getTime() > Date.now() + 31 * 24 * 3600 * 1000
+  ) {
+    err(
+      'You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again.',
+    );
   }
 
   const now = nowDb();
@@ -235,11 +256,19 @@ sendAccessRoutes.post('/sends/:sendId/access/file/:fileId', async (c) => {
     if (!(await checkSendPassword(send, password))) err('Invalid password.');
   }
 
-  await db.update(sends).set({ accessCount: send.accessCount + 1 }).where(eq(sends.uuid, send.uuid));
+  await db
+    .update(sends)
+    .set({ accessCount: send.accessCount + 1 })
+    .where(eq(sends.uuid, send.uuid));
 
   const token = await encodeJwt(
     c.env.JWT_SECRET,
-    basicClaims({ domain: config.domain, kind: 'send', sub: `${sendId}/${fileId}`, ttlSeconds: 300 }),
+    basicClaims({
+      domain: config.domain,
+      kind: 'send',
+      sub: `${sendId}/${fileId}`,
+      ttlSeconds: 300,
+    }),
   );
   return c.json({
     object: 'send-fileDownload',
@@ -255,7 +284,11 @@ sendAccessRoutes.get('/sends/:sendId/:fileId', async (c) => {
   const t = c.req.query('t') ?? '';
   const config = c.get('config');
   try {
-    const claims = await decodeJwt<{ sub: string }>(c.env.JWT_SECRET, t, issuer(config.domain, 'send'));
+    const claims = await decodeJwt<{ sub: string }>(
+      c.env.JWT_SECRET,
+      t,
+      issuer(config.domain, 'send'),
+    );
     if (claims.sub !== `${sendId}/${fileId}`) notFound();
   } catch {
     notFound();
@@ -364,7 +397,9 @@ sendRoutes.post('/sends/:id/file/:fileId', async (c) => {
 
   const expected = Number(data.size ?? 0);
   if (Math.abs(expected - file.size) > 1) {
-    err(`Send file size mismatch (expected within [${expected - 1}, ${expected + 1}], got ${file.size})`);
+    err(
+      `Send file size mismatch (expected within [${expected - 1}, ${expected + 1}], got ${file.size})`,
+    );
   }
 
   await c.env.FILES.put(fileKey(send.uuid, fileId), file.stream(), {
@@ -384,14 +419,20 @@ sendRoutes.post('/sends/file', async (c) => {
   await enforceDisableSendPolicy(db, user);
 
   const form = await c.req.parseBody();
-  const model = typeof form.model === 'string' ? (JSON.parse(form.model) as Record<string, unknown>) : null;
+  const model =
+    typeof form.model === 'string' ? (JSON.parse(form.model) as Record<string, unknown>) : null;
   const file = form.data ?? form.file;
   if (!model || !(file instanceof File)) err('Invalid multipart data');
 
   const data = parseSendData(model);
   const send = await newSendFromData(db, user, data);
   const fileId = randomAlphanum(24).toLowerCase();
-  send.data = JSON.stringify({ id: fileId, fileName: file.name, size: file.size, sizeName: displaySize(file.size) });
+  send.data = JSON.stringify({
+    id: fileId,
+    fileName: file.name,
+    size: file.size,
+    sizeName: displaySize(file.size),
+  });
   await db.insert(sends).values(send);
   await c.env.FILES.put(fileKey(send.uuid, fileId), file.stream(), {
     httpMetadata: { contentType: 'application/octet-stream' },
@@ -413,7 +454,7 @@ sendRoutes.put('/sends/:id', async (c) => {
   const send = await loadOwnSend(c, c.req.param('id'));
   const data = parseSendData((await c.req.json()) as Record<string, unknown>);
 
-  if (data.type !== send.atype) err('Sends can\'t change type');
+  if (data.type !== send.atype) err("Sends can't change type");
 
   if (send.atype === SendType.Text) {
     if (!data.text) err('Send data not provided');
@@ -421,8 +462,13 @@ sendRoutes.put('/sends/:id', async (c) => {
   }
 
   const deletion = new Date(data.deletionDate);
-  if (!Number.isFinite(deletion.getTime()) || deletion.getTime() > Date.now() + 31 * 24 * 3600 * 1000) {
-    err('You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again.');
+  if (
+    !Number.isFinite(deletion.getTime()) ||
+    deletion.getTime() > Date.now() + 31 * 24 * 3600 * 1000
+  ) {
+    err(
+      'You cannot have a Send with a deletion date that far into the future. Adjust the Deletion Date to a value less than 31 days from now and try again.',
+    );
   }
 
   send.name = data.name;
@@ -442,7 +488,10 @@ sendRoutes.put('/sends/:id', async (c) => {
     send.passwordIter = pw.iter;
   }
 
-  await db.update(sends).set({ ...send }).where(eq(sends.uuid, send.uuid));
+  await db
+    .update(sends)
+    .set({ ...send })
+    .where(eq(sends.uuid, send.uuid));
   await touchUser(db, user.uuid);
   sendNotifier(c).sendUpdate(UpdateType.SyncSendUpdate, send, [user.uuid], device.uuid);
   return c.json(sendToJson(send));
@@ -456,7 +505,10 @@ sendRoutes.put('/sends/:id/remove-password', async (c) => {
   send.passwordSalt = null;
   send.passwordIter = null;
   send.revisionDate = nowDb();
-  await db.update(sends).set({ ...send }).where(eq(sends.uuid, send.uuid));
+  await db
+    .update(sends)
+    .set({ ...send })
+    .where(eq(sends.uuid, send.uuid));
   sendNotifier(c).sendUpdate(UpdateType.SyncSendUpdate, send, [user.uuid], device.uuid);
   return c.json(sendToJson(send));
 });
