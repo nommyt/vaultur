@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+allowBuilds:
+  core-js-pure: false
+  esbuild: true
+  sharp: true
+  workerd: true

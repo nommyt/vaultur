@@ -1,0 +1,123 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vaultur",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+
+  // ---------------------------------------------------------------------
+  // Storage bindings
+  // ---------------------------------------------------------------------
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vaultur",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      // Icon cache, ephemeral state (2FA email codes, rate-limit fallback)
+      "binding": "KV",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      // Cipher attachments + file Sends
+      "binding": "FILES",
+      "bucket_name": "vaultur-files"
+    }
+  ],
+
+  // ---------------------------------------------------------------------
+  // Durable Objects — WebSocket notifications hub (SignalR-compatible)
+  // ---------------------------------------------------------------------
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NOTIFICATIONS",
+        "class_name": "NotificationsHub"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["NotificationsHub"]
+    }
+  ],
+
+  // ---------------------------------------------------------------------
+  // Cloudflare Email Sending binding (first-class transactional email).
+  // Requires an Email Routing-enabled zone; destination_address rules apply
+  // for unverified recipients. See docs/deployment.md.
+  // ---------------------------------------------------------------------
+  "send_email": [
+    {
+      "name": "EMAIL",
+      // Optionally lock the sender: "allowed_sender_addresses": ["vault@example.com"]
+    }
+  ],
+
+  // ---------------------------------------------------------------------
+  // Web vault static assets (official bw_web_builds; run scripts/fetch-web-vault.sh)
+  // ---------------------------------------------------------------------
+  "assets": {
+    "directory": "./public/web-vault",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/api/*", "/identity/*", "/notifications/*", "/icons/*", "/admin", "/admin/*", "/events/*", "/alive"]
+  },
+
+  // Scheduled jobs: trash purge, send purge, expired auth requests, incomplete 2FA alerts
+  "triggers": {
+    "crons": ["11 3 * * *", "*/15 * * * *"]
+  },
+
+  // ---------------------------------------------------------------------
+  // Configuration (non-secret). Secrets are set via `wrangler secret put`:
+  //   JWT_SECRET             — HS256 signing secret (64+ random bytes, base64)
+  //   ADMIN_TOKEN            — admin panel token (optional; empty disables /admin)
+  // ---------------------------------------------------------------------
+  "vars": {
+    // Public origin of this deployment, e.g. "https://vault.example.com".
+    // When empty, derived from the incoming request.
+    "DOMAIN": "",
+    "SIGNUPS_ALLOWED": "true",
+    // Comma-separated list of email domains allowed to sign up even when
+    // SIGNUPS_ALLOWED is false.
+    "SIGNUPS_DOMAINS_WHITELIST": "",
+    "SIGNUPS_VERIFY": "false",
+    "INVITATIONS_ALLOWED": "true",
+    "EMERGENCY_ACCESS_ALLOWED": "true",
+    "SENDS_ALLOWED": "true",
+    "ORG_CREATION_USERS": "all",
+    "PASSWORD_HINTS_ALLOW": "true",
+    "SHOW_PASSWORD_HINT": "false",
+    // Server-side PBKDF2 iterations applied to the client-supplied master
+    // password hash before storage (vaultwarden default: 600000).
+    "PASSWORD_ITERATIONS": "600000",
+    "EMAIL_FROM": "",
+    "EMAIL_FROM_NAME": "Vaultur",
+    "PUSH_ENABLED": "false",
+    "PUSH_INSTALLATION_ID": "",
+    "PUSH_INSTALLATION_KEY": "",
+    "PUSH_RELAY_URI": "https://push.bitwarden.com",
+    "PUSH_IDENTITY_URI": "https://identity.bitwarden.com",
+    "TRASH_AUTO_DELETE_DAYS": "30",
+    "ATTACHMENT_LIMIT_PER_USER_KB": "",
+    "SEND_LIMIT_PER_USER_KB": "",
+    "ICON_SERVICE": "internal",
+    "ICON_CACHE_TTL_SECONDS": "2592000",
+    "USER_ATTACHMENT_LIMIT": "",
+    "LOGIN_RATELIMIT_MAX_BURST": "10",
+    "ADMIN_SESSION_LIFETIME_MINUTES": "20"
+  }
+}

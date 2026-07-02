@@ -1,0 +1,26 @@
+{
+  "name": "vaultur",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bitwarden-compatible server for Cloudflare Workers (Hono + D1 + R2 + KV + Durable Objects + Email) with a TanStack web vault.",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "pnpm --filter @vaultur/server dev",
+    "dev:web": "pnpm --filter @vaultur/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @vaultur/e2e test",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3"
+  }
+}
