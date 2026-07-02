@@ -12,12 +12,50 @@ export interface AuthContext {
 }
 
 /**
+ * Public /api endpoints that must never require a bearer token.
+ *
+ * Hono flattens sub-app middleware: mounting several routers at `/api` with an
+ * internal `.use('*', requireAuth)` makes the FIRST such guard match every
+ * `/api/*` request, including the public routes defined in later-mounted
+ * routers. Rather than reorder every router, `requireAuth` short-circuits to
+ * `next()` for these known-public paths so the real (public) handler runs.
+ *
+ * Each entry is [METHOD, pathname RegExp]. Keep in sync with the public routes
+ * declared across the api/* modules.
+ */
+const PUBLIC_API_ROUTES: [string, RegExp][] = [
+  ['POST', /^\/api\/accounts\/password-hint$/],
+  ['POST', /^\/api\/accounts\/verify-email-token$/],
+  ['POST', /^\/api\/accounts\/recover-delete$/],
+  ['POST', /^\/api\/accounts\/delete-recover-token$/],
+  ['POST', /^\/api\/two-factor\/send-email-login$/],
+  ['POST', /^\/api\/two-factor\/recover$/],
+  ['POST', /^\/api\/sends\/access\/[^/]+$/],
+  ['POST', /^\/api\/sends\/[^/]+\/access\/file\/[^/]+$/],
+  ['GET', /^\/api\/sends\/[^/]+\/[^/]+$/], // token-authenticated file download
+  ['POST', /^\/api\/auth-requests$/],
+  ['GET', /^\/api\/auth-requests\/[^/]+\/response$/],
+  ['GET', /^\/api\/devices\/knowndevice$/],
+  ['GET', /^\/api\/organizations\/[^/]+\/policies\/token$/],
+];
+
+function isPublicApiRoute(method: string, pathname: string): boolean {
+  return PUBLIC_API_ROUTES.some(([m, re]) => m === method && re.test(pathname));
+}
+
+/**
  * Bearer-token guard for /api/* routes — vaultwarden's `Headers` guard.
  * Verifies the login JWT, loads user + device, and enforces the security stamp
  * (with stamp exceptions for the routes vaultwarden allows during forced
  * password resets).
  */
 export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
+  // Bypass for public routes shadowed by an earlier router's /api/* guard.
+  if (isPublicApiRoute(c.req.method, new URL(c.req.url).pathname)) {
+    await next();
+    return;
+  }
+
   const header = c.req.header('Authorization') ?? c.req.query('access_token') ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : header;
   if (!token) unauthorized('Missing access token');
