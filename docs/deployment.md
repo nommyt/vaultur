@@ -215,13 +215,13 @@ this; push only affects background notifications on the mobile apps.
 
 ## 9. Scheduled jobs
 
-Two cron triggers are already configured in `wrangler.jsonc` and deploy
-automatically:
+Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
-- `11 3 * * *` (daily) — purge soft-deleted ciphers older than
+- `12 7 * * 0` (every Sunday 07:12) — purge soft-deleted ciphers older than
   `TRASH_AUTO_DELETE_DAYS`.
 - `*/15 * * * *` — purge expired Sends (and their R2 objects), expired
-  auth-requests, and stale incomplete-2FA records.
+  auth-requests, and stale incomplete-2FA records. Early-outs when there is
+  nothing to purge, to avoid unnecessary R2/DB writes.
 
 ---
 

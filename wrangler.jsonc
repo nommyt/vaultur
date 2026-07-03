@@ -87,9 +87,11 @@
 			"/alive"
 		]
 	},
-	// Scheduled jobs: trash purge, send purge, expired auth requests, incomplete 2FA alerts
+	// Scheduled jobs:
+	//   - weekly Sun 07:12: trash purge
+	//   - every 15 min:   send/auth-request/incomplete-2FA purge (early-out if empty)
 	"triggers": {
-		"crons": ["11 3 * * *", "*/15 * * * *"]
+		"crons": ["12 7 * * 0", "*/15 * * * *"]
 	},
 
 	// "routes": [{ "pattern": "vault.example.com", "custom_domain": true }],
