@@ -1,22 +1,19 @@
+import { timingSafeEqual } from "node:crypto"
+
 export function uuid(): string {
 	return crypto.randomUUID()
 }
 
 export function b64Encode(bytes: Uint8Array): string {
-	let s = ""
-	for (const b of bytes) s += String.fromCharCode(b)
-	return btoa(s)
+	return Buffer.from(bytes).toString("base64")
 }
 
 export function b64Decode(value: string): Uint8Array {
-	const s = atob(value)
-	const out = new Uint8Array(s.length)
-	for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i)
-	return out
+	return new Uint8Array(Buffer.from(value, "base64"))
 }
 
 export function b64UrlEncode(bytes: Uint8Array): string {
-	return b64Encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+	return Buffer.from(bytes).toString("base64url")
 }
 
 export function randomBytes(length: number): Uint8Array {
@@ -27,7 +24,7 @@ export function randomBytes(length: number): Uint8Array {
 
 /** Random lowercase-hex token. */
 export function randomHex(bytes: number): string {
-	return [...randomBytes(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("")
+	return Buffer.from(randomBytes(bytes)).toString("hex")
 }
 
 const ALPHANUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
@@ -50,9 +47,7 @@ export function randomNumericCode(length: number): string {
 
 export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 	if (a.length !== b.length) return false
-	let diff = 0
-	for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!
-	return diff === 0
+	return timingSafeEqual(a, b)
 }
 
 export function constantTimeEqualStr(a: string, b: string): boolean {

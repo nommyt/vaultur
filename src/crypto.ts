@@ -1,9 +1,15 @@
+import { createHash, createHmac, pbkdf2Sync } from "node:crypto"
+
 import { b64Decode, b64Encode, constantTimeEqual, randomBytes } from "./util"
 
 /**
  * Server-side password verification, matching vaultwarden's model:
  * clients derive a master-password hash (PBKDF2/Argon2id client-side) and send
  * it as `password`; the server stores PBKDF2-HMAC-SHA256(clientHash, salt, N).
+ *
+ * Uses node:crypto (nodejs_compat) rather than Web Crypto — Web Crypto's
+ * PBKDF2 is hard-capped at 100k iterations on Workers, while node:crypto has
+ * no such limit, so vaultwarden's 600k default is achievable.
  */
 
 export async function pbkdf2(
@@ -12,15 +18,7 @@ export async function pbkdf2(
 	iterations: number,
 	lengthBytes = 32
 ): Promise<Uint8Array> {
-	const key = await crypto.subtle.importKey("raw", password as BufferSource, "PBKDF2", false, [
-		"deriveBits"
-	])
-	const bits = await crypto.subtle.deriveBits(
-		{ name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations },
-		key,
-		lengthBytes * 8
-	)
-	return new Uint8Array(bits)
+	return new Uint8Array(pbkdf2Sync(password, salt, iterations, lengthBytes, "sha256"))
 }
 
 export interface PasswordRecord {
@@ -50,16 +48,9 @@ export async function verifyPassword(clientHash: string, record: PasswordRecord)
 }
 
 export async function sha256(data: Uint8Array): Promise<Uint8Array> {
-	return new Uint8Array(await crypto.subtle.digest("SHA-256", data as BufferSource))
+	return new Uint8Array(createHash("sha256").update(data).digest())
 }
 
 export async function hmacSha256(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
-	const k = await crypto.subtle.importKey(
-		"raw",
-		key as BufferSource,
-		{ name: "HMAC", hash: "SHA-256" },
-		false,
-		["sign"]
-	)
-	return new Uint8Array(await crypto.subtle.sign("HMAC", k, data as BufferSource))
+	return new Uint8Array(createHmac("sha256", key).update(data).digest())
 }

@@ -217,7 +217,7 @@ this; push only affects background notifications on the mobile apps.
 
 Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
-- `12 7 * * 0` (every Sunday 07:12) — purge soft-deleted ciphers older than
+- `12 7 * * 1` (every Sunday 07:12; Cloudflare cron uses 1=Sunday) — purge soft-deleted ciphers older than
   `TRASH_AUTO_DELETE_DAYS`.
 - `*/15 * * * *` — purge expired Sends (and their R2 objects), expired
   auth-requests, and stale incomplete-2FA records. Early-outs when there is
@@ -229,26 +229,26 @@ Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
 All non-secret settings live in `wrangler.jsonc` under `vars`. Highlights:
 
-| Var                                  | Default        | Meaning                                                                                       |
-| ------------------------------------ | -------------- | --------------------------------------------------------------------------------------------- |
-| `DOMAIN`                             | request origin | Public origin used in links and JWT issuers                                                   |
-| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                                                             |
-| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                                                       |
-| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before first login                                                 |
-| `INVITATIONS_ALLOWED`                | `true`         | Allow inviting users who have no account yet                                                  |
-| `EMERGENCY_ACCESS_ALLOWED`           | `true`         | Enable emergency access                                                                       |
-| `SENDS_ALLOWED`                      | `true`         | Enable Bitwarden Send                                                                         |
-| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails allowed to create orgs                                        |
-| `PASSWORD_HINTS_ALLOW`               | `true`         | Allow storing/serving password hints                                                          |
-| `SHOW_PASSWORD_HINT`                 | `false`        | In no-mail mode, reveal hints inline                                                          |
-| `PASSWORD_ITERATIONS`                | `100000`       | Server-side PBKDF2 rounds over the client hash (hard-capped at 100000 by Workers' Web Crypto) |
-| `EMAIL_FROM` / `EMAIL_FROM_NAME`     | — / `Vaultur`  | Sender; empty `EMAIL_FROM` = no-mail mode                                                     |
-| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay                                                                             |
-| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Soft-delete purge window (0 disables)                                                         |
-| `ICON_SERVICE`                       | `internal`     | `internal` (proxy+cache) or a redirect service                                                |
-| `ICON_CACHE_TTL_SECONDS`             | `2592000`      | KV icon cache TTL (30 days)                                                                   |
-| `LOGIN_RATELIMIT_MAX_BURST`          | `10`           | Login attempts per IP per minute (soft, KV-based)                                             |
-| `ADMIN_SESSION_LIFETIME_MINUTES`     | `20`           | Admin cookie lifetime                                                                         |
+| Var                                  | Default        | Meaning                                                                                             |
+| ------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------- |
+| `DOMAIN`                             | request origin | Public origin used in links and JWT issuers                                                         |
+| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                                                                   |
+| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                                                             |
+| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before first login                                                       |
+| `INVITATIONS_ALLOWED`                | `true`         | Allow inviting users who have no account yet                                                        |
+| `EMERGENCY_ACCESS_ALLOWED`           | `true`         | Enable emergency access                                                                             |
+| `SENDS_ALLOWED`                      | `true`         | Enable Bitwarden Send                                                                               |
+| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails allowed to create orgs                                              |
+| `PASSWORD_HINTS_ALLOW`               | `true`         | Allow storing/serving password hints                                                                |
+| `SHOW_PASSWORD_HINT`                 | `false`        | In no-mail mode, reveal hints inline                                                                |
+| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds over the client hash (vaultwarden parity via node:crypto; no Workers cap) |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME`     | — / `Vaultur`  | Sender; empty `EMAIL_FROM` = no-mail mode                                                           |
+| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay                                                                                   |
+| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Soft-delete purge window (0 disables)                                                               |
+| `ICON_SERVICE`                       | `internal`     | `internal` (proxy+cache) or a redirect service                                                      |
+| `ICON_CACHE_TTL_SECONDS`             | `2592000`      | KV icon cache TTL (30 days)                                                                         |
+| `LOGIN_RATELIMIT_MAX_BURST`          | `10`           | Login attempts per IP per minute (soft, KV-based)                                                   |
+| `ADMIN_SESSION_LIFETIME_MINUTES`     | `20`           | Admin cookie lifetime                                                                               |
 
 Secrets (set with `wrangler secret put`, never in `wrangler.jsonc`):
 

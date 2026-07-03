@@ -5,7 +5,8 @@ import type { Bindings } from "../env"
 
 /**
  * Cron jobs (vaultwarden's background tasks); both early-out when nothing to purge:
- *  - weekly Sunday 07:12: purge soft-deleted ciphers older than TRASH_AUTO_DELETE_DAYS
+ *  - weekly Sunday 07:12 (`12 7 * * 1`, CF cron where 1=Sun): purge soft-deleted
+ *    ciphers older than TRASH_AUTO_DELETE_DAYS
  *    NOTE: tweak back to daily cadence (`12 7 * * *`) — currently weekly.
  *  - every 15 min:  purge expired sends (and their R2 objects), expired auth
  *    requests, and stale incomplete-2FA records.
@@ -17,7 +18,7 @@ export async function runScheduledJobs(
 	const db = createDb(env.VAULTUR_DB)
 	const now = new Date()
 
-	// Weekly (Sunday at 07:12 UTC): purge soft-deleted ciphers.
+	// Weekly (Sunday at 07:12 UTC; CF cron uses 1=Sun): purge soft-deleted ciphers.
 	if (controller.cron.startsWith("12 7")) {
 		const days = Number(env.TRASH_AUTO_DELETE_DAYS ?? "30")
 		if (days <= 0) {

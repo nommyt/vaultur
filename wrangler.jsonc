@@ -91,7 +91,7 @@
 	//   - weekly Sun 07:12: trash purge
 	//   - every 15 min:   send/auth-request/incomplete-2FA purge (early-out if empty)
 	"triggers": {
-		"crons": ["12 7 * * 0", "*/15 * * * *"]
+		"crons": ["12 7 * * 1", "*/15 * * * *"]
 	},
 
 	// "routes": [{ "pattern": "vault.example.com", "custom_domain": true }],
@@ -117,9 +117,9 @@
 		"PASSWORD_HINTS_ALLOW": "true",
 		"SHOW_PASSWORD_HINT": "false",
 		// Server-side PBKDF2 iterations applied to the client-supplied master
-		// password hash before storage (vaultur default: 100000).
-		// Workers' Web Crypto hard-caps PBKDF2 at 100k iterations
-		"PASSWORD_ITERATIONS": "100000",
+		// password hash before storage (vaultur default: 600000, matching vaultwarden).
+		// node:crypto (nodejs_compat) has no iteration cap.
+		"PASSWORD_ITERATIONS": "600000",
 		"EMAIL_FROM": "no-reply@example.com",
 		"EMAIL_FROM_NAME": "Vaultur",
 		"PUSH_ENABLED": "false",

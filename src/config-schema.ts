@@ -321,7 +321,7 @@ export const READONLY_FIELDS: ReadonlyField[] = [
 		label: "Server password iterations",
 		type: "text",
 		description:
-			"Server-side PBKDF2 iterations. Capped at 100000 by Workers' Web Crypto; set via PASSWORD_ITERATIONS.",
+			"Server-side PBKDF2 iterations. Defaults to 600000 (vaultwarden parity via node:crypto); set via PASSWORD_ITERATIONS.",
 		value: (c) => String(c.passwordIterations)
 	},
 	{
