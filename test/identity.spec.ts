@@ -108,4 +108,113 @@ describe("identity", () => {
 		const body = (await res.json()) as Record<string, any>
 		expect(body.error).toBe("invalid_grant")
 	})
+
+	it("send-verification-email returns a raw token for iOS, JSON for other clients", async () => {
+		const jwtShape = /^[\w-]+\.[\w-]+\.[\w-]+$/
+
+		const iosRes = await SELF.fetch(
+			"https://vault.test/identity/accounts/register/send-verification-email",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", "Device-Type": "1" },
+				body: JSON.stringify({ email: TEST_USER.email, name: TEST_USER.name })
+			}
+		)
+		expect(iosRes.status).toBe(200)
+		const iosToken = await iosRes.text()
+		expect(iosToken).toMatch(jwtShape) // raw, no surrounding JSON quotes
+
+		const browserRes = await SELF.fetch(
+			"https://vault.test/identity/accounts/register/send-verification-email",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", "Device-Type": "2" },
+				body: JSON.stringify({ email: TEST_USER.email, name: TEST_USER.name })
+			}
+		)
+		expect(browserRes.status).toBe(200)
+		const browserToken = (await browserRes.json()) as string
+		expect(browserToken).toMatch(jwtShape)
+	})
+
+	it("register/finish accepts the legacy flat masterPasswordHash/key format", async () => {
+		const tokenRes = await SELF.fetch(
+			"https://vault.test/identity/accounts/register/send-verification-email",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: TEST_USER.email, name: TEST_USER.name })
+			}
+		)
+		const emailVerificationToken = (await tokenRes.json()) as string
+
+		const res = await SELF.fetch("https://vault.test/identity/accounts/register/finish", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				email: TEST_USER.email,
+				masterPasswordHash: TEST_USER.masterPasswordHash,
+				key: TEST_USER.key,
+				kdf: TEST_USER.kdf,
+				kdfIterations: TEST_USER.kdfIterations,
+				keys: TEST_USER.keys,
+				emailVerificationToken
+			})
+		})
+		expect(res.status).toBe(200)
+
+		const loginRes = await login()
+		expect(loginRes.status).toBe(200)
+	})
+
+	it("register/finish accepts the wrapped masterPasswordAuthentication/masterPasswordUnlock format", async () => {
+		const tokenRes = await SELF.fetch(
+			"https://vault.test/identity/accounts/register/send-verification-email",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: TEST_USER.email, name: TEST_USER.name })
+			}
+		)
+		const emailVerificationToken = (await tokenRes.json()) as string
+
+		const res = await SELF.fetch("https://vault.test/identity/accounts/register/finish", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				email: TEST_USER.email,
+				masterPasswordHint: null,
+				userAsymmetricKeys: TEST_USER.keys,
+				masterPasswordAuthentication: {
+					salt: TEST_USER.email,
+					kdf: { kdfType: TEST_USER.kdf, iterations: TEST_USER.kdfIterations },
+					masterPasswordAuthenticationHash: TEST_USER.masterPasswordHash
+				},
+				masterPasswordUnlock: {
+					salt: TEST_USER.email,
+					kdf: { kdfType: TEST_USER.kdf, iterations: TEST_USER.kdfIterations },
+					masterKeyWrappedUserKey: TEST_USER.key
+				},
+				emailVerificationToken
+			})
+		})
+		expect(res.status).toBe(200)
+
+		// The stored hash/key/kdf came from the wrapped shape, so login and prelogin
+		// (flat-format readers) must reflect the same values.
+		const pre = await SELF.fetch("https://vault.test/identity/accounts/prelogin", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ email: TEST_USER.email })
+		})
+		expect(((await pre.json()) as Record<string, unknown>).kdfIterations).toBe(
+			TEST_USER.kdfIterations
+		)
+
+		const loginRes = await login()
+		expect(loginRes.status).toBe(200)
+		const loginBody = (await loginRes.json()) as Record<string, any>
+		expect(loginBody.Key).toBe(TEST_USER.key)
+		expect(loginBody.PrivateKey).toBe(TEST_USER.keys.encryptedPrivateKey)
+	})
 })

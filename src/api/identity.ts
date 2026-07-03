@@ -28,7 +28,7 @@ import { masterPasswordPolicy } from "../services/policies"
 import { checkLoginRateLimit } from "../services/ratelimit"
 import { twofactorAuth } from "../services/twofactor"
 import { findUserByEmail, newUserShell, passwordFields, touchUser } from "../services/users"
-import { EventType, KdfType, MembershipStatus } from "../shared"
+import { DeviceType, EventType, KdfType, MembershipStatus } from "../shared"
 import { ci, constantTimeEqualStr, normalizeEmail, uuid } from "../util"
 
 export const identityRoutes = new Hono<AppEnv>()
@@ -545,6 +545,12 @@ identityRoutes.post("/accounts/register/send-verification-email", async (c) => {
 		}
 		return c.body(null, 204)
 	}
+	// The iOS app reads this response as raw bytes rather than JSON (see
+	// StartRegistrationResponseModel in the official client), so a JSON-quoted
+	// string corrupts the token with literal quote characters. Android/browser/web
+	// parse it as JSON, so only iOS gets the unquoted form.
+	const deviceType = Number.parseInt(c.req.header("Device-Type") ?? "", 10)
+	if (deviceType === DeviceType.Ios) return c.text(token)
 	return c.json(token)
 })
 
@@ -569,10 +575,26 @@ async function registerHandler(c: Ctx, emailVerification: boolean) {
 	if (!email) err("Invalid email address")
 
 	let name = (ci<string>(body, "name") ?? null) as string | null
-	const key = ci<string>(body, "key") ?? ci<string>(body, "userSymmetricKey")
 	const keysRaw = (ci<Record<string, unknown>>(body, "keys") ??
 		ci<Record<string, unknown>>(body, "userAsymmetricKeys")) as Record<string, unknown> | undefined
-	const masterPasswordHash = ci<string>(body, "masterPasswordHash")
+
+	// Newer clients (2026.5+ web/browser) wrap the master-password fields in
+	// masterPasswordAuthentication/masterPasswordUnlock instead of sending flat
+	// masterPasswordHash/key. Same dual-format pattern as accountUnlockData in
+	// accounts.ts's rotateKey.
+	const masterPasswordAuthentication = ci<Record<string, unknown>>(
+		body,
+		"masterPasswordAuthentication"
+	)
+	const masterPasswordUnlock = ci<Record<string, unknown>>(body, "masterPasswordUnlock")
+
+	const key =
+		ci<string>(body, "key") ??
+		ci<string>(body, "userSymmetricKey") ??
+		ci<string>(masterPasswordUnlock, "masterKeyWrappedUserKey")
+	const masterPasswordHash =
+		ci<string>(body, "masterPasswordHash") ??
+		ci<string>(masterPasswordAuthentication, "masterPasswordAuthenticationHash")
 	const masterPasswordHint = (ci<string>(body, "masterPasswordHint") ?? null) as string | null
 	const organizationUserId = ci<string>(body, "organizationUserId")
 	const emailVerificationToken = ci<string>(body, "emailVerificationToken")
@@ -580,11 +602,30 @@ async function registerHandler(c: Ctx, emailVerification: boolean) {
 	const acceptEmergencyAccessId = ci<string>(body, "acceptEmergencyAccessId")
 	const acceptEmergencyAccessInviteToken = ci<string>(body, "acceptEmergencyAccessInviteToken")
 
+	const kdfNested =
+		ci<Record<string, unknown>>(masterPasswordAuthentication, "kdf") ??
+		ci<Record<string, unknown>>(masterPasswordUnlock, "kdf")
 	const kdfRaw = {
-		kdf: ci<number>(body, "kdf") ?? ci<number>(body, "kdfType") ?? KdfType.Pbkdf2,
-		kdfIterations: ci<number>(body, "kdfIterations") ?? ci<number>(body, "iterations") ?? 600_000,
-		kdfMemory: ci<number>(body, "kdfMemory") ?? ci<number>(body, "memory") ?? null,
-		kdfParallelism: ci<number>(body, "kdfParallelism") ?? ci<number>(body, "parallelism") ?? null
+		kdf:
+			ci<number>(body, "kdf") ??
+			ci<number>(body, "kdfType") ??
+			ci<number>(kdfNested, "kdfType") ??
+			KdfType.Pbkdf2,
+		kdfIterations:
+			ci<number>(body, "kdfIterations") ??
+			ci<number>(body, "iterations") ??
+			ci<number>(kdfNested, "iterations") ??
+			600_000,
+		kdfMemory:
+			ci<number>(body, "kdfMemory") ??
+			ci<number>(body, "memory") ??
+			ci<number>(kdfNested, "memory") ??
+			null,
+		kdfParallelism:
+			ci<number>(body, "kdfParallelism") ??
+			ci<number>(body, "parallelism") ??
+			ci<number>(kdfNested, "parallelism") ??
+			null
 	}
 
 	if (!masterPasswordHash) err("masterPasswordHash cannot be blank")
