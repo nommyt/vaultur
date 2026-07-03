@@ -88,7 +88,7 @@
 	},
 
 	// "routes": [{ "pattern": "vaultur.nommyt.com", "custom_domain": true }],
-  
+
 	// ---------------------------------------------------------------------
 	// Configuration (non-secret). Secrets are set via `wrangler secret put`:
 	//   JWT_SECRET             — HS256 signing secret (64+ random bytes, base64)
@@ -111,7 +111,7 @@
 		"SHOW_PASSWORD_HINT": "false",
 		// Server-side PBKDF2 iterations applied to the client-supplied master
 		// password hash before storage (vaultur default: 100000).
-    // Workers' Web Crypto hard-caps PBKDF2 at 100k iterations
+		// Workers' Web Crypto hard-caps PBKDF2 at 100k iterations
 		"PASSWORD_ITERATIONS": "100000",
 		"EMAIL_FROM": "no-reply@vaultur.nommyt.com",
 		"EMAIL_FROM_NAME": "Vaultur",
