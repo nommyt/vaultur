@@ -1,8 +1,8 @@
 {
 	"version": "6",
 	"dialect": "sqlite",
-	"id": "05a4ca5b-7bd8-4191-9d32-dda57c9fac97",
-	"prevId": "00000000-0000-0000-0000-000000000000",
+	"id": "00f1e22d-e6cd-4437-b08d-886b96367330",
+	"prevId": "05a4ca5b-7bd8-4191-9d32-dda57c9fac97",
 	"tables": {
 		"archives": {
 			"name": "archives",
@@ -1543,6 +1543,37 @@
 					"onUpdate": "no action"
 				}
 			},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"server_config": {
+			"name": "server_config",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"json": {
+					"name": "json",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"updated_at": {
+					"name": "updated_at",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
 			"compositePrimaryKeys": {},
 			"uniqueConstraints": {},
 			"checkConstraints": {}
