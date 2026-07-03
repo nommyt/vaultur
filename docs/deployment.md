@@ -158,6 +158,14 @@ web vault is missing.
 pnpm deploy                     # bootstraps the assets dir, then wrangler deploy
 ```
 
+> **Deploy config override:** The committed `wrangler.jsonc` is an open-source
+> template with placeholder resource IDs. To deploy your own, either edit it in
+> place, or (preferred for maintainers) keep a local `wrangler.deploy.jsonc`
+> (gitignored) with your real IDs/domains — `pnpm deploy` and
+> `pnpm db:migrate:remote` auto-use it when present, falling back to
+> `wrangler.jsonc` otherwise. Override explicitly with
+> `WRANGLER_CONFIG=path`.
+
 Then point any Bitwarden client at `https://<your-worker-domain>` as the
 self-hosted server URL. The default `*.workers.dev` domain works for testing;
 for production use a custom domain (next section).

@@ -1,5 +1,9 @@
 # Vaultur
 
+<p align="center">
+  <img src="public/vaultur-emblem.png" alt="Vaultur emblem" width="840">
+</p>
+
 **A Bitwarden-compatible password manager server that runs entirely on
 Cloudflare — no VM, no container, no database to patch.**
 

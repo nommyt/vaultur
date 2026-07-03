@@ -12,3 +12,4 @@ dist/
 coverage/
 test-results/
 public/web-vault/
+wrangler.deploy.jsonc

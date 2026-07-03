@@ -11,7 +11,7 @@
 	"packageManager": "pnpm@11.9.0",
 	"scripts": {
 		"dev": "bash scripts/ensure-web-vault.sh && wrangler dev",
-		"deploy": "bash scripts/ensure-web-vault.sh && wrangler deploy",
+		"deploy": "bash scripts/ensure-web-vault.sh && sh -c 'wrangler deploy --config \"${WRANGLER_CONFIG:-$( [ -f wrangler.deploy.jsonc ] && echo wrangler.deploy.jsonc || echo wrangler.jsonc )}\"'",
 		"build": "bash scripts/ensure-web-vault.sh && wrangler deploy --dry-run --outdir dist",
 		"test": "vitest run",
 		"test:watch": "vitest",
@@ -19,7 +19,7 @@
 		"cf-typegen": "wrangler types",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate:local": "wrangler d1 migrations apply vaultur --local",
-		"db:migrate:remote": "wrangler d1 migrations apply vaultur --remote",
+		"db:migrate:remote": "sh -c 'wrangler d1 migrations apply vaultur --remote --config \"${WRANGLER_CONFIG:-$( [ -f wrangler.deploy.jsonc ] && echo wrangler.deploy.jsonc || echo wrangler.jsonc )}\"'",
 		"web-vault:fetch": "bash scripts/fetch-web-vault.sh",
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check ."
