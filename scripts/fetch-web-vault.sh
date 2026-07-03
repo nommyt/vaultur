@@ -33,6 +33,13 @@ rm -rf "$DEST"
 mkdir -p "$DEST"
 tar -xzf "$TMP/web-vault.tar.gz" -C "$DEST" --strip-components=1
 
+# Rename vaultwarden.css reference to vaultur.css so our override is picked up
+for htmlfile in "$DEST"/*.html; do
+	[[ -f "$htmlfile" ]] || continue
+	sed -i.bak -e 's/vaultwarden\.css/vaultur.css/g' "$htmlfile"
+	rm -f "$htmlfile.bak"
+done
+
 # Apply Vaultur overrides (branding css, etc.) if present
 if [[ -d "$OVERRIDES" ]]; then
   echo "Applying Vaultur overrides ..."
