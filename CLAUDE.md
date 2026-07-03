@@ -69,11 +69,28 @@ new admin-editable setting means touching both `config.ts` (env default) and
 `config-schema.ts` (form field); it's still just an env var if you skip the
 latter.
 
+## Crypto (PBKDF2)
+
+Workerd's native crypto (both WebCrypto and `node:crypto`) caps PBKDF2
+iterations at 100k in production (cloudflare/workerd#1346). Vaultur uses
+`@noble/hashes` (pure JS, no cap) for `pbkdf2()` / `hashPassword()` /
+`verifyPassword()` in `src/crypto.ts`. SHA256 and HMAC-SHA256 still use
+`node:crypto` (no cap there).
+
+When the `VAULTUR_HEAVY` Durable Object binding is configured, the PBKDF2
+derivation is offloaded to a stateless DO (`HeavyCompute`, `src/durable/`)
+for a higher CPU budget (free-tier friendly). The offload is transparent:
+middleware (`src/app.ts`) sets a runner via `AsyncLocalStorage` so callers
+are oblivious. Omit the binding to run inline (recommended for paid plans).
+
 ## Commands (run at repo root)
 
 - `pnpm typecheck` — strict tsc
 - `pnpm test` / `pnpm vitest run test/<file>.spec.ts` — integration tests in
   real workerd (D1/KV/R2/DO bindings via `@cloudflare/vitest-pool-workers`)
+- `pnpm test:heavy` — DO-specific tests (separate vitest config with
+  `VAULTUR_HEAVY` binding; not included in `pnpm test` due to storage
+  isolation limitations)
 - `pnpm format` / `pnpm format:check` — oxfmt write / check
 - `pnpm dev` — wrangler dev (needs `.dev.vars`, see `.dev.vars.example`)
 - `pnpm deploy` — wrangler deploy

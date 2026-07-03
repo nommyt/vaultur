@@ -23,9 +23,11 @@ import { syncRoutes } from "./api/sync"
 import { twofactorRoutes } from "./api/twofactor"
 import { loadConfig } from "./config"
 import { applyOverrides } from "./config-schema"
+import { pbkdf2Als } from "./crypto"
 import { createDb } from "./db"
 import type { AppEnv } from "./env"
 import { onError, errorBody } from "./error"
+import { heavyRunner } from "./services/pbkdf2-offload"
 import { getConfigOverrides } from "./services/server-config"
 
 export function createApp() {
@@ -38,7 +40,8 @@ export function createApp() {
 		const overrides = await getConfigOverrides(db)
 		c.set("config", applyOverrides(base, overrides))
 		c.set("ip", c.req.header("CF-Connecting-IP") ?? "0.0.0.0")
-		await next()
+		const runner = c.env.VAULTUR_HEAVY ? heavyRunner(c.env.VAULTUR_HEAVY) : undefined
+		return pbkdf2Als.run(runner, () => next())
 	})
 
 	app.onError(onError)

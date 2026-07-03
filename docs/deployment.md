@@ -11,6 +11,7 @@ Cloudflare:
 | Attachments & file Sends                         | R2                    | `VAULTUR_FILES`         |
 | Icon cache, 2FA email codes, rate-limit counters | KV                    | `VAULTUR_KV`            |
 | Live-sync WebSocket hub                          | Durable Objects       | `VAULTUR_NOTIFICATIONS` |
+| PBKDF2 offload (optional)                        | Durable Objects       | `VAULTUR_HEAVY`         |
 | Transactional email                              | Email Sending         | `VAULTUR_EMAIL`         |
 | Web vault UI                                     | Workers Static Assets | `VAULTUR_ASSETS`        |
 
@@ -51,7 +52,7 @@ Open **`wrangler.jsonc`** and paste the two IDs:
 "kv_namespaces": [{ "binding": "VAULTUR_KV", "id": "PASTE_KV_ID" }],
 ```
 
-(The R2 bucket and the Durable Object are referenced by name/class and need no ID.)
+(The R2 bucket and the two Durable Objects are referenced by name/class and need no ID.)
 
 ---
 
@@ -197,7 +198,41 @@ The official mobile apps dislike `*.workers.dev`. Add a custom domain:
 
 ---
 
-## 8. Mobile push notifications (optional)
+## 8. PBKDF2 offload (optional)
+
+Vaultur uses `@noble/hashes` (pure JS) for server-side PBKDF2 to avoid
+Cloudflare Workers' 100k iteration cap on native crypto. This works on any
+plan — it's just V8 compute.
+
+On the **Free plan**, where Workers have a small per-request CPU budget,
+enabling the optional `VAULTUR_HEAVY` Durable Object moves the PBKDF2
+derivation into a DO with a 30-second CPU budget (free-tier friendly):
+
+```jsonc
+"durable_objects": {
+    "bindings": [
+        { "name": "VAULTUR_NOTIFICATIONS", "class_name": "NotificationsHub" },
+        { "name": "VAULTUR_HEAVY", "class_name": "HeavyCompute" }
+    ]
+},
+"migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["NotificationsHub"] },
+    { "tag": "v2", "new_classes": ["HeavyCompute"] }
+]
+```
+
+**On the Paid plan** (30s CPU budget), omit the `VAULTUR_HEAVY` binding and
+let PBKDF2 run inline — it completes in ~450ms at 600k iterations with
+no network hop.
+
+The offload happens transparently: middleware wraps the request in an
+`AsyncLocalStorage` context, and `pbkdf2()` / `hashPassword()` /
+`verifyPassword()` pick up the DO stub automatically — no per-call-site
+changes are needed.
+
+---
+
+## 9. Mobile push notifications (optional)
 
 To relay push to the official Bitwarden mobile apps, register for a push
 installation id/key at <https://bitwarden.com/host> and set:
@@ -213,7 +248,7 @@ this; push only affects background notifications on the mobile apps.
 
 ---
 
-## 9. Scheduled jobs
+## 10. Scheduled jobs
 
 Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
@@ -229,26 +264,26 @@ Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
 All non-secret settings live in `wrangler.jsonc` under `vars`. Highlights:
 
-| Var                                  | Default        | Meaning                                                                                             |
-| ------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------- |
-| `DOMAIN`                             | request origin | Public origin used in links and JWT issuers                                                         |
-| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                                                                   |
-| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                                                             |
-| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before first login                                                       |
-| `INVITATIONS_ALLOWED`                | `true`         | Allow inviting users who have no account yet                                                        |
-| `EMERGENCY_ACCESS_ALLOWED`           | `true`         | Enable emergency access                                                                             |
-| `SENDS_ALLOWED`                      | `true`         | Enable Bitwarden Send                                                                               |
-| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails allowed to create orgs                                              |
-| `PASSWORD_HINTS_ALLOW`               | `true`         | Allow storing/serving password hints                                                                |
-| `SHOW_PASSWORD_HINT`                 | `false`        | In no-mail mode, reveal hints inline                                                                |
-| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds over the client hash (vaultwarden parity via node:crypto; no Workers cap) |
-| `EMAIL_FROM` / `EMAIL_FROM_NAME`     | — / `Vaultur`  | Sender; empty `EMAIL_FROM` = no-mail mode                                                           |
-| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay                                                                                   |
-| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Soft-delete purge window (0 disables)                                                               |
-| `ICON_SERVICE`                       | `internal`     | `internal` (proxy+cache) or a redirect service                                                      |
-| `ICON_CACHE_TTL_SECONDS`             | `2592000`      | KV icon cache TTL (30 days)                                                                         |
-| `LOGIN_RATELIMIT_MAX_BURST`          | `10`           | Login attempts per IP per minute (soft, KV-based)                                                   |
-| `ADMIN_SESSION_LIFETIME_MINUTES`     | `20`           | Admin cookie lifetime                                                                               |
+| Var                                  | Default        | Meaning                                                                                                                       |
+| ------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `DOMAIN`                             | request origin | Public origin used in links and JWT issuers                                                                                   |
+| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                                                                                             |
+| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                                                                                       |
+| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before first login                                                                                 |
+| `INVITATIONS_ALLOWED`                | `true`         | Allow inviting users who have no account yet                                                                                  |
+| `EMERGENCY_ACCESS_ALLOWED`           | `true`         | Enable emergency access                                                                                                       |
+| `SENDS_ALLOWED`                      | `true`         | Enable Bitwarden Send                                                                                                         |
+| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails allowed to create orgs                                                                        |
+| `PASSWORD_HINTS_ALLOW`               | `true`         | Allow storing/serving password hints                                                                                          |
+| `SHOW_PASSWORD_HINT`                 | `false`        | In no-mail mode, reveal hints inline                                                                                          |
+| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds over the client hash (`@noble/hashes` pure JS, no cap — workerd's native crypto is limited to 100k) |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME`     | — / `Vaultur`  | Sender; empty `EMAIL_FROM` = no-mail mode                                                                                     |
+| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay                                                                                                             |
+| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Soft-delete purge window (0 disables)                                                                                         |
+| `ICON_SERVICE`                       | `internal`     | `internal` (proxy+cache) or a redirect service                                                                                |
+| `ICON_CACHE_TTL_SECONDS`             | `2592000`      | KV icon cache TTL (30 days)                                                                                                   |
+| `LOGIN_RATELIMIT_MAX_BURST`          | `10`           | Login attempts per IP per minute (soft, KV-based)                                                                             |
+| `ADMIN_SESSION_LIFETIME_MINUTES`     | `20`           | Admin cookie lifetime                                                                                                         |
 
 Secrets (set with `wrangler secret put`, never in `wrangler.jsonc`):
 
@@ -341,4 +376,5 @@ the schema parity keeps hand-migration straightforward.
 | `Invalid claim` / logged out after deploy                                                                          | `JWT_SECRET` changed or isn't set. Set it once as a secret.                                                                                                                                                                            |
 | `/admin` returns 404                                                                                               | `ADMIN_TOKEN` is not set — the admin panel is disabled by design.                                                                                                                                                                      |
 | Live sync not updating                                                                                             | Confirm the `VAULTUR_NOTIFICATIONS` Durable Object migration (`tag: v1`) deployed; check the client reaches `/notifications/hub`.                                                                                                      |
+| Registration/login fails with `Pbkdf2 failed: iteration counts above 100000`                                       | You're running an older build that used `node:crypto` pbkdf2. Deploy the latest `main` — Vaultur now uses `@noble/hashes` (pure JS) with no iteration cap.                                                                             |
 | Extension/mobile "create account" fails (`masterPasswordHash cannot be blank`, `invalid email verification token`) | Official Bitwarden clients change their registration wire format over time (wrapped `masterPasswordAuthentication`/`masterPasswordUnlock` payloads, iOS's raw-text token response). Redeploy the latest `main` — Vaultur tracks these. |

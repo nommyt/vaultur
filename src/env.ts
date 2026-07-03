@@ -9,6 +9,7 @@ export interface Bindings {
 	VAULTUR_KV: KVNamespace
 	VAULTUR_FILES: R2Bucket
 	VAULTUR_NOTIFICATIONS: DurableObjectNamespace
+	VAULTUR_HEAVY?: DurableObjectNamespace
 	VAULTUR_EMAIL?: EmailBinding
 	VAULTUR_ASSETS?: Fetcher
 

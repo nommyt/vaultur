@@ -12,7 +12,7 @@ function totpFor(key: string, stepOffset = 0): string {
 	return totp.generate({ timestamp: Date.now() + stepOffset * 30_000 })
 }
 
-describe("two-factor (authenticator)", () => {
+describe("two-factor (authenticator)", { timeout: 20_000 }, () => {
 	it("enrolls TOTP, then requires it on login, then disables it", async () => {
 		const session = await registerAndLogin()
 		const token = session.access_token

@@ -62,8 +62,7 @@ flowchart LR
     W --> D1[("D1<br/>vault database")]
     W --> R2[("R2<br/>attachments & file Sends")]
     W --> KV[("KV<br/>icon cache, rate limits, 2FA codes")]
-    W --> DO[["Durable Objects<br/>live-sync WebSocket hub"]]
-    W --> EM["Email Sending<br/>transactional email"]
+    W --> DO[["Durable Objects<br/>live-sync WebSocket hub<br/>+ optional PBKDF2 offload"]]
 ```
 
 One Worker handles the API, the WebSocket upgrade for live sync, and serves
@@ -92,6 +91,10 @@ Cloudflare binding, not a third-party dependency.
   no-mail mode
 - **Admin API**, icon proxy with KV cache, event logs, scheduled cleanup jobs
 - **Web vault**: serves the official client (bw_web_builds) as static assets
+- **PBKDF2 offload** (optional): set the `VAULTUR_HEAVY` Durable Object binding
+  to move CPU-heavy password hashing into a DO with a 30s CPU budget —
+  free-tier friendly. Omit it to run inline via `@noble/hashes` (no iteration
+  cap, recommended for paid plans).
 
 ## Quick start
 
@@ -129,6 +132,7 @@ src/              Worker source (Hono app, API routes, services)
   src/api/        Route handlers (23 modules — identity, vault, orgs, admin, ...)
   src/services/   Business logic (14 modules — auth, mail, push, ssrf, ...)
   src/db/         Drizzle ORM schema for D1 (1:1 port of vaultwarden's schema)
+  src/durable/    Durable Object classes (notifications hub, PBKDF2 offload)
   src/shared/     Protocol enums/constants
 test/             Vitest integration tests (real workerd)
 migrations/       Generated D1 migrations
@@ -149,7 +153,8 @@ Integration tests run the real Worker in workerd via
 not mocked:
 
 ```bash
-pnpm test
+pnpm test                  # all tests except Durable Object offload tests
+pnpm test:heavy            # Durable Object PBKDF2 offload tests (separate config)
 ```
 
 See **[docs/testing.md](docs/testing.md)** for what's covered and how it

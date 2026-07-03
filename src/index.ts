@@ -2,6 +2,7 @@ import { createApp } from "./app"
 import type { Bindings } from "./env"
 import { runScheduledJobs } from "./jobs/scheduled"
 
+export { HeavyCompute } from "./durable/heavy-compute"
 export { NotificationsHub } from "./durable/notifications-hub"
 
 const app = createApp()

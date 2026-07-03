@@ -47,6 +47,12 @@
 			{
 				"name": "VAULTUR_NOTIFICATIONS",
 				"class_name": "NotificationsHub"
+			},
+			{
+				// Omit this binding to run PBKDF2 inline (recommended for paid).
+				// Set it to offload to a Durable Object for free-tier CPU budget.
+				"name": "VAULTUR_HEAVY",
+				"class_name": "HeavyCompute"
 			}
 		]
 	},
@@ -54,6 +60,10 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["NotificationsHub"]
+		},
+		{
+			"tag": "v2",
+			"new_classes": ["HeavyCompute"]
 		}
 	],
 	// ---------------------------------------------------------------------
@@ -118,7 +128,8 @@
 		"SHOW_PASSWORD_HINT": "false",
 		// Server-side PBKDF2 iterations applied to the client-supplied master
 		// password hash before storage (vaultur default: 600000, matching vaultwarden).
-		// node:crypto (nodejs_compat) has no iteration cap.
+		// @noble/hashes (pure JS) has no iteration cap; workerd's native crypto
+		// caps at 100k in production (cloudflare/workerd#1346).
 		"PASSWORD_ITERATIONS": "600000",
 		"EMAIL_FROM": "no-reply@example.com",
 		"EMAIL_FROM_NAME": "Vaultur",

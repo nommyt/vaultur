@@ -6,7 +6,7 @@ export default defineWorkersConfig(async () => {
 
 	return {
 		test: {
-			exclude: ["test/heavy-compute.spec.ts"],
+			include: ["test/heavy-compute.spec.ts"],
 			setupFiles: ["./test/apply-migrations.ts"],
 			poolOptions: {
 				workers: {
@@ -18,7 +18,10 @@ export default defineWorkersConfig(async () => {
 						d1Databases: ["VAULTUR_DB"],
 						kvNamespaces: ["VAULTUR_KV"],
 						r2Buckets: ["VAULTUR_FILES"],
-						durableObjects: { VAULTUR_NOTIFICATIONS: "NotificationsHub" },
+						durableObjects: {
+							VAULTUR_NOTIFICATIONS: "NotificationsHub",
+							VAULTUR_HEAVY: "HeavyCompute"
+						},
 						bindings: {
 							TEST_MIGRATIONS: migrations,
 							JWT_SECRET: "vaultur-test-jwt-secret-vaultur-test-jwt-secret",

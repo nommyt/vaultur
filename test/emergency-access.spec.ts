@@ -40,7 +40,7 @@ async function loginUser(email: string): Promise<string> {
 	return ((await res.json()) as { access_token: string }).access_token
 }
 
-describe("emergency access (takeover, mail disabled)", () => {
+describe("emergency access (takeover, mail disabled)", { timeout: 20_000 }, () => {
 	it("runs invite → confirm → initiate → approve → password reset", async () => {
 		const grantorEmail = "grantor@ea.test"
 		const granteeEmail = "grantee@ea.test"

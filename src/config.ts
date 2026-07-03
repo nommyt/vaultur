@@ -57,8 +57,8 @@ export function loadConfig(env: Bindings, requestUrl: string): Config {
 		passwordHintsAllow: bool(env.PASSWORD_HINTS_ALLOW, true),
 		showPasswordHint: bool(env.SHOW_PASSWORD_HINT, false),
 		// Server-side PBKDF2 over the client's already-derived master-password hash.
-		// node:crypto (nodejs_compat) has no iteration cap, so we match vaultwarden's
-		// 600k default and allow up to 2M (the Bitwarden client KDF ceiling).
+		// Uses @noble/hashes (pure JS) to avoid workerd's 100k cap on native crypto —
+		// matches vaultwarden's 600k default and allows up to 2M (Bitwarden KDF ceiling).
 		passwordIterations: Math.min(Math.max(int(env.PASSWORD_ITERATIONS, 600_000), 1), 2_000_000),
 		emailFrom,
 		emailFromName: env.EMAIL_FROM_NAME || "Vaultur",
