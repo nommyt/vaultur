@@ -1,5 +1,5 @@
-import { sign, verify } from 'hono/jwt';
-import type { JWTPayload } from 'hono/utils/jwt/types';
+import { sign, verify } from "hono/jwt"
+import type { JWTPayload } from "hono/utils/jwt/types"
 
 /**
  * JWT issuance/verification, ported from vaultwarden src/auth.rs.
@@ -10,76 +10,76 @@ import type { JWTPayload } from 'hono/utils/jwt/types';
  */
 
 export type JwtKind =
-  | 'login'
-  | 'invite'
-  | 'emergencyaccessinvite'
-  | 'delete'
-  | 'verifyemail'
-  | 'admin'
-  | 'send'
-  | 'api.organization'
-  | 'file_download'
-  | 'register_verify'
-  | '2faremember';
+	| "login"
+	| "invite"
+	| "emergencyaccessinvite"
+	| "delete"
+	| "verifyemail"
+	| "admin"
+	| "send"
+	| "api.organization"
+	| "file_download"
+	| "register_verify"
+	| "2faremember"
 
 export interface LoginJwtClaims extends JWTPayload {
-  nbf: number;
-  exp: number;
-  iss: string;
-  sub: string; // user uuid
-  premium: boolean;
-  name: string;
-  email: string;
-  email_verified: boolean;
-  sstamp: string;
-  device: string;
-  devicetype: string;
-  client_id: string;
-  scope: string[];
-  amr: string[];
+	nbf: number
+	exp: number
+	iss: string
+	sub: string // user uuid
+	premium: boolean
+	name: string
+	email: string
+	email_verified: boolean
+	sstamp: string
+	device: string
+	devicetype: string
+	client_id: string
+	scope: string[]
+	amr: string[]
 }
 
-export const ACCESS_TOKEN_TTL_SECONDS = 2 * 60 * 60; // matches vaultwarden default (2h)
+export const ACCESS_TOKEN_TTL_SECONDS = 2 * 60 * 60 // matches vaultwarden default (2h)
 
 export function issuer(domain: string, kind: JwtKind): string {
-  return `${new URL(domain).origin}|${kind}`;
+	return `${new URL(domain).origin}|${kind}`
 }
 
 export async function encodeJwt(secret: string, claims: JWTPayload): Promise<string> {
-  return sign(claims, secret, 'HS256');
+	return sign(claims, secret, "HS256")
 }
 
 export async function decodeJwt<T extends JWTPayload>(
-  secret: string,
-  token: string,
-  expectedIssuer: string,
+	secret: string,
+	token: string,
+	expectedIssuer: string
 ): Promise<T> {
-  const payload = (await verify(token, secret, 'HS256')) as T;
-  if (payload.iss !== expectedIssuer) throw new Error('Invalid issuer');
-  return payload;
+	const payload = (await verify(token, secret, "HS256")) as T
+	if (payload.iss !== expectedIssuer) throw new Error("Invalid issuer")
+	return payload
 }
 
 interface BasicClaimsInput {
-  domain: string;
-  kind: JwtKind;
-  sub: string;
-  ttlSeconds: number;
-  extra?: Record<string, unknown>;
+	domain: string
+	kind: JwtKind
+	sub: string
+	ttlSeconds: number
+	extra?: Record<string, unknown>
 }
 
 export function basicClaims({
-  domain,
-  kind,
-  sub,
-  ttlSeconds,
-  extra,
+	domain,
+	kind,
+	sub,
+	ttlSeconds,
+	extra
 }: BasicClaimsInput): JWTPayload {
-  const now = Math.floor(Date.now() / 1000);
-  return {
-    nbf: now,
-    exp: now + ttlSeconds,
-    iss: issuer(domain, kind),
-    sub,
-    ...extra,
-  };
+	const now = Math.floor(Date.now() / 1000)
+	return {
+		nbf: now,
+		exp: now + ttlSeconds,
+		iss: issuer(domain, kind),
+		sub,
+		...extra
+	}
 }
