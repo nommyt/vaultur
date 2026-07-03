@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest something Vaultur doesn't do yet.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+  - type: textarea
+    id: vaultwarden
+    attributes:
+      label: Prior art in vaultwarden
+      description: >-
+        Vaultur tracks vaultwarden parity closely. If vaultwarden already
+        supports this, link its behavior/issue/PR here.

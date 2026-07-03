@@ -1,0 +1,45 @@
+name: Bug report
+description: Something isn't working the way a Bitwarden-compatible server should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client and version
+      description: The Bitwarden client you hit this with.
+      placeholder: browser extension 2026.6.0 / iOS 2026.5.2 / web vault / CLI
+    validations:
+      required: true
+  - type: input
+    id: deployment
+    attributes:
+      label: How is Vaultur deployed?
+      placeholder: wrangler dev locally / deployed Worker on workers.dev / custom domain
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error responses
+      description: >-
+        Worker logs (`wrangler tail`), browser console output, or the JSON
+        error body. Redact anything sensitive first.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this
+          required: true
+        - label: >-
+            I'm not attaching real vault data, tokens, master passwords, or
+            other credentials in this report
+          required: true

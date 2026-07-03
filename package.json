@@ -5,6 +5,15 @@
 	"type": "module",
 	"description": "Bitwarden-compatible server for Cloudflare Workers (Hono + D1 + R2 + KV + Durable Objects + Email).",
 	"license": "AGPL-3.0-only",
+	"author": "nommyt",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nommyt/vaultur.git"
+	},
+	"homepage": "https://github.com/nommyt/vaultur#readme",
+	"bugs": {
+		"url": "https://github.com/nommyt/vaultur/issues"
+	},
 	"engines": {
 		"node": ">=22"
 	},

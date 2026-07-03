@@ -7,6 +7,7 @@
 **A Bitwarden-compatible password manager server that runs entirely on
 Cloudflare — no VM, no container, no database to patch.**
 
+[![CI](https://github.com/nommyt/vaultur/actions/workflows/ci.yml/badge.svg)](https://github.com/nommyt/vaultur/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
@@ -267,21 +268,28 @@ Vaultur targets vaultwarden parity. A few things are deliberately out of scope:
   as a primary factor (WebAuthn as a second factor is fully supported), Key
   Connector, and billing/subscriptions.
 
+## Support
+
+- **Documentation:** [docs/](docs/) for deployment, testing, and parity notes.
+- **Issues & feature requests:** [GitHub Issues](https://github.com/nommyt/vaultur/issues)
+  (search existing issues first).
+- **Discussions:** Use GitHub Discussions for questions, ideas, and community
+  conversation.
+
+## Security
+
+Report security vulnerabilities privately through
+[GitHub Security Advisories](https://github.com/nommyt/vaultur/security/advisories/new).
+Do **not** open a public issue.
+
+Only the Worker itself (`src/`) and its build/test tooling are in scope. The
+bundled web vault is an unmodified official Bitwarden client — report upstream
+issues to Bitwarden.
+
 ## Contributing
 
-Issues and PRs are welcome. A few things that'll save you a round-trip:
-
-- Read **[CLAUDE.md](CLAUDE.md)** first — it documents the conventions this
-  codebase leans on (error envelopes, request-body parsing, admin-settings
-  wiring, etc.), useful whether or not you're using an AI coding agent.
-- [lefthook](https://lefthook.dev) git hooks enforce checks locally. Run
-  `pnpm exec lefthook install` once per clone; it wires up
-  `pnpm format:check` + `pnpm typecheck` on commit and `pnpm build` +
-  `pnpm test` on push.
-- New behavior needs a test in `test/*.spec.ts` (real workerd, not mocks —
-  see [docs/testing.md](docs/testing.md)) and `pnpm format` before you push.
-- Schema changes go in `src/db/schema.ts`, then `pnpm db:generate`. Never
-  hand-edit the generated SQL under `migrations/`.
+Issues and PRs are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for
+setup, testing conventions, and the PR checklist.
 
 ## License
 
