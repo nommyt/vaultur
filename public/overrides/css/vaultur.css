@@ -1,11 +1,12 @@
-/* Vaultur web-vault overrides — loaded on top of the bw_web_builds theme.
- * Keep changes minimal: branding accents only, no layout surgery. */
-:root {
-	--color-primary-600: 99 91 255; /* Vaultur indigo */
-	--color-primary-700: 82 72 236;
+/* Hide the redundant SSO email field that overlaps the "Remember email"
+ * checkbox on the login page. The real SSO flow ("Use single sign-on")
+ * has its own page with a separate "SSO identifier" field, so this one
+ * is a duplicate layout bug. The wrapper is hidden only when it isn't
+ * also the continue-email wrapper, and the input itself is hidden as a
+ * second layer for cases where the DOM shape differs. */
+bit-form-field:has(input.vw-email-sso):not(:has(input.vw-email-continue)) {
+	display: none;
 }
-
-app-root .logo,
-app-frontend-layout .logo {
-	filter: hue-rotate(18deg) saturate(1.15);
+input.vw-email-sso {
+	display: none;
 }
