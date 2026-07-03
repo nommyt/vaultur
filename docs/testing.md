@@ -12,22 +12,22 @@ pnpm test                       # all suites
 pnpm vitest run test/vault.spec.ts   # one suite
 ```
 
-Current coverage — **60 tests across 12 suites**:
+Current coverage — **67 tests across 12 suites**:
 
-| Suite              | What it covers                                                                                                                            |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `identity`         | register, prelogin, password/refresh/api-key grants, `invalid_grant` shapes                                                               |
-| `vault`            | cipher CRUD, folders, sync payload, import, purge, stale-revision guard, account password change → token invalidation, equivalent domains |
-| `twofactor`        | authenticator TOTP enroll → login challenge → complete → disable, recovery-code reset                                                     |
-| `organizations`    | org create (profile shape), collections CRUD, cipher sharing, org keys, owner/leave guards                                                |
-| `org-members`      | invite → confirm → edit → revoke → restore, groups, 2FA-policy revocation, cross-org isolation                                            |
-| `emergency-access` | invite → confirm → initiate → approve → takeover → grantor password reset                                                                 |
-| `sends`            | text send + public access + access-count/password/max-access limits, file send v2 upload/download                                         |
-| `attachments`      | R2 v2 upload/download via signed URL, size-mismatch rejection, delete                                                                     |
-| `devices`          | knowndevice probe, list, push-token set/clear, deauthorize → token invalidation                                                           |
-| `admin`            | token auth, user disable/enable/remove-2fa, invite, diagnostics                                                                           |
-| `api-surface`      | plans, prelogin aliases, device-verification-settings, org API-key login → LDAP directory import, bulk collections                        |
-| `ssrf`             | icon-proxy host validation (SSRF) + 2FA email obscuring                                                                                   |
+| Suite              | What it covers                                                                                                                                                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`         | register (both flat and wrapped `masterPasswordAuthentication`/`masterPasswordUnlock` payloads), iOS-vs-JSON verification-token content negotiation, prelogin, password/refresh/api-key grants, `invalid_grant` shapes |
+| `vault`            | cipher CRUD, folders, sync payload, import, purge, stale-revision guard, account password change → token invalidation, equivalent domains                                                                              |
+| `twofactor`        | authenticator TOTP enroll → login challenge → complete → disable, recovery-code reset                                                                                                                                  |
+| `organizations`    | org create (profile shape), collections CRUD, cipher sharing, org keys, owner/leave guards                                                                                                                             |
+| `org-members`      | invite → confirm → edit → revoke → restore, groups, 2FA-policy revocation, cross-org isolation                                                                                                                         |
+| `emergency-access` | invite → confirm → initiate → approve → takeover → grantor password reset                                                                                                                                              |
+| `sends`            | text send + public access + access-count/password/max-access limits, file send v2 upload/download                                                                                                                      |
+| `attachments`      | R2 v2 upload/download via signed URL, size-mismatch rejection, delete                                                                                                                                                  |
+| `devices`          | knowndevice probe, list, push-token set/clear, deauthorize → token invalidation                                                                                                                                        |
+| `admin`            | bearer + session-cookie auth, HTML login/settings/users/organizations/diagnostics pages, user disable/enable/remove-2fa/invite, D1-persisted config overrides                                                          |
+| `api-surface`      | plans, prelogin aliases, device-verification-settings, org API-key login → LDAP directory import, bulk collections                                                                                                     |
+| `ssrf`             | icon-proxy host validation (SSRF) + 2FA email obscuring                                                                                                                                                                |
 
 ## Parity with vaultwarden's test suite
 
@@ -71,8 +71,12 @@ clear "not available" rather than silently misbehaving:
 - **SSO / OpenID Connect** (`/identity/connect/authorize`, `oidc-signin`, prevalidate)
 - **Hardware / advanced 2FA**: WebAuthn/FIDO2, Duo, YubiKey OTP. Supported 2FA:
   authenticator TOTP, email codes, recovery codes.
-- **vaultwarden admin HTML panel** and its config editor / DB backup. Vaultur
-  exposes an equivalent **JSON admin API** (`/admin/*`) instead.
+- **Admin-panel DB backup/restore.** The rest of vaultwarden's admin panel —
+  login, settings editor (D1-persisted overrides), users, organizations,
+  diagnostics — is ported to `/admin/*` (`admin.spec.ts`). D1 doesn't support
+  the SQLite-file-copy backup vaultwarden's admin panel offers; use
+  Cloudflare's D1 [time travel](https://developers.cloudflare.com/d1/reference/time-travel/)
+  or `wrangler d1 export` instead.
 
 ## Can Vaultur pass vaultwarden's tests?
 
