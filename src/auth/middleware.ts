@@ -39,6 +39,8 @@ const PUBLIC_API_ROUTES: [string, RegExp][] = [
 	["GET", /^\/api\/auth-requests\/[^/]+\/response$/],
 	["GET", /^\/api\/devices\/knowndevice$/],
 	["GET", /^\/api\/organizations\/[^/]+\/policies\/token$/],
+	// SSO domain probe on the login page (pre-auth) — returns a dummy identifier
+	["POST", /^\/api\/organizations\/domain\/sso\/verified$/],
 	// Org-API-key authenticated (directory connector) — guards itself
 	["POST", /^\/api\/public\/organization\/import$/]
 ]

@@ -3,3 +3,33 @@
 JWT_SECRET="change-me-to-64-random-bytes-base64"
 # Enables /admin endpoints. Leave empty to disable the admin API entirely.
 ADMIN_TOKEN=""
+
+# --- Feature toggles (paid tiers in Bitwarden, free here; defaults match vaultwarden) ---
+# Also editable from the admin Settings page.
+#ORG_GROUPS_ENABLED="false"     # organization groups (Enterprise in Bitwarden); off like vaultwarden
+#ORG_EVENTS_ENABLED="false"     # event / audit logs (Enterprise in Bitwarden); off like vaultwarden
+#_ENABLE_EMAIL_2FA="true"       # defaults on when email is configured
+#_ENABLE_DUO="true"             # global Duo credentials below
+#_ENABLE_YUBICO="true"          # YubiKey OTP
+
+# --- YubiKey OTP two-factor (both required to enable) ---
+# Get credentials at https://upgrade.yubico.com/getapikey/
+#YUBICO_CLIENT_ID=""
+#YUBICO_SECRET_KEY=""
+#YUBICO_SERVER="https://api.yubico.com/wsapi/2.0/verify"
+
+# --- Duo Security two-factor (Universal Prompt; create a "Web SDK" application) ---
+#DUO_IKEY=""
+#DUO_SKEY=""
+#DUO_HOST="api-xxxxxxxx.duosecurity.com"
+
+# --- OIDC single sign-on ---
+#SSO_ENABLED="false"
+#SSO_AUTHORITY="https://idp.example.com/realms/master"
+#SSO_CLIENT_ID=""
+#SSO_CLIENT_SECRET=""
+#SSO_SCOPES="email profile"
+#SSO_ONLY="false"
+#SSO_SIGNUPS_MATCH_EMAIL="true"
+#SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION="false"
+#SSO_PKCE="true"

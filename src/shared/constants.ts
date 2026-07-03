@@ -66,7 +66,18 @@ export enum TwoFactorType {
 	Remember = 5,
 	OrganizationDuo = 6,
 	Webauthn = 7,
-	RecoveryCode = 8
+	RecoveryCode = 8,
+
+	// Implementation details (rows with atype >= 1000 are transient server state,
+	// never listed as providers) — values match vaultwarden.
+	U2fRegisterChallenge = 1000,
+	U2fLoginChallenge = 1001,
+	EmailVerificationChallenge = 1002,
+	WebauthnRegisterChallenge = 1003,
+	WebauthnLoginChallenge = 1004,
+
+	// Protected Actions verification via email
+	ProtectedActions = 2000
 }
 
 export enum MembershipStatus {

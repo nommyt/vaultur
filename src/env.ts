@@ -44,6 +44,27 @@ export interface Bindings {
 	USER_ATTACHMENT_LIMIT?: string
 	SEND_LIMIT_PER_USER_KB?: string
 	ATTACHMENT_LIMIT_PER_USER_KB?: string
+	ORG_GROUPS_ENABLED?: string
+	ORG_EVENTS_ENABLED?: string
+	_ENABLE_EMAIL_2FA?: string
+	_ENABLE_DUO?: string
+	_ENABLE_YUBICO?: string
+	YUBICO_CLIENT_ID?: string
+	YUBICO_SECRET_KEY?: string
+	YUBICO_SERVER?: string
+	DUO_IKEY?: string
+	DUO_SKEY?: string
+	DUO_HOST?: string
+	SSO_ENABLED?: string
+	SSO_AUTHORITY?: string
+	SSO_CLIENT_ID?: string
+	SSO_CLIENT_SECRET?: string
+	SSO_SCOPES?: string
+	SSO_ONLY?: string
+	SSO_SIGNUPS_MATCH_EMAIL?: string
+	SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION?: string
+	SSO_PKCE?: string
+	SSO_ORGANIZATIONS_INVITE?: string
 
 	// Test-only
 	TEST_MIGRATIONS?: unknown

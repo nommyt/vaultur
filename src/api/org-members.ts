@@ -421,7 +421,7 @@ orgMemberRoutes.post("/organizations/:orgId/users/invite", async (c) => {
 			)
 		}
 
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.OrganizationUserInvited,
 			orgUuid: orgId,
 			actUserUuid: inviter.uuid,
@@ -619,7 +619,7 @@ async function confirmMember(c: Ctx, orgId: string, memberId: string, key: strin
 		await mail.inviteConfirmed(mailer, config, target.email, org.name)
 	}
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.OrganizationUserConfirmed,
 		orgUuid: orgId,
 		actUserUuid: actor.uuid,
@@ -746,7 +746,7 @@ async function editMember(c: Ctx) {
 	const groupIds = ci<string[]>(body, "groups")
 	if (groupIds !== undefined) await replaceMemberGroups(db, membership, groupIds ?? [])
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.OrganizationUserUpdated,
 		orgUuid: orgId,
 		actUserUuid: actor.uuid,
@@ -779,7 +779,7 @@ async function removeMember(c: Ctx, orgId: string, memberId: string): Promise<vo
 	}
 
 	await db.delete(usersOrganizations).where(eq(usersOrganizations.uuid, membership.uuid))
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.OrganizationUserRemoved,
 		orgUuid: orgId,
 		actUserUuid: actor.uuid,
@@ -845,7 +845,7 @@ async function setRevoked(c: Ctx, orgId: string, memberId: string, revoke: boole
 			.update(usersOrganizations)
 			.set({ status: membership.status - 128 })
 			.where(eq(usersOrganizations.uuid, membership.uuid))
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.OrganizationUserRevoked,
 			orgUuid: orgId,
 			actUserUuid: actor.uuid,
@@ -858,7 +858,7 @@ async function setRevoked(c: Ctx, orgId: string, memberId: string, revoke: boole
 			.update(usersOrganizations)
 			.set({ status: membership.status + 128 })
 			.where(eq(usersOrganizations.uuid, membership.uuid))
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.OrganizationUserRestored,
 			orgUuid: orgId,
 			actUserUuid: actor.uuid,
@@ -933,7 +933,13 @@ orgMemberRoutes.get("/organizations/:orgId/groups/details", async (c) => {
 	return c.json({ data, object: "list", continuationToken: null })
 })
 
+/** Group mutation is gated by ORG_GROUPS_ENABLED (vaultur default: on). */
+function requireGroupsEnabled(c: Ctx): void {
+	if (!c.get("config").orgGroupsEnabled) err("Group support is disabled")
+}
+
 async function upsertGroup(c: Ctx, existing: Group | null) {
+	requireGroupsEnabled(c)
 	const { user, device } = auth(c)
 	const orgId = c.req.param("orgId")!
 	await requireMember(c, orgId, MembershipType.Admin)
@@ -989,7 +995,7 @@ async function upsertGroup(c: Ctx, existing: Group | null) {
 			.onConflictDoNothing()
 	}
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: existing ? EventType.GroupUpdated : EventType.GroupCreated,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,
@@ -1079,13 +1085,14 @@ orgMemberRoutes.delete("/organizations/:orgId/groups/:groupId/user/:memberId", a
 })
 
 async function deleteGroupHandler(c: Ctx) {
+	requireGroupsEnabled(c)
 	const { user, device } = auth(c)
 	const orgId = c.req.param("orgId")!
 	await requireMember(c, orgId, MembershipType.Admin)
 	const db = c.get("db")
 	const group = await loadGroup(c, orgId)
 	await db.delete(groups).where(eq(groups.uuid, group.uuid))
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.GroupDeleted,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,
@@ -1110,7 +1117,7 @@ orgMemberRoutes.delete("/organizations/:orgId/groups", async (c) => {
 		const group = await db.query.groups.findFirst({ where: eq(groups.uuid, id) })
 		if (!group || group.organizationsUuid !== orgId) continue
 		await db.delete(groups).where(eq(groups.uuid, id))
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.GroupDeleted,
 			orgUuid: orgId,
 			actUserUuid: user.uuid,
@@ -1135,6 +1142,7 @@ orgMemberRoutes.get("/organizations/:orgId/groups/:groupId/users", async (c) => 
 })
 
 orgMemberRoutes.put("/organizations/:orgId/groups/:groupId/users", async (c) => {
+	requireGroupsEnabled(c)
 	const orgId = c.req.param("orgId")!
 	await requireMember(c, orgId, MembershipType.Admin)
 	const db = c.get("db")
@@ -1305,7 +1313,7 @@ async function putPolicyHandler(c: Ctx) {
 		await db.insert(orgPolicies).values(row)
 	}
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.PolicyUpdated,
 		orgUuid: orgId,
 		actUserUuid: actor.uuid,
@@ -1394,7 +1402,7 @@ orgMemberRoutes.put("/organizations/:orgId/users/:memberId/reset-password", asyn
 		)
 	}
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.OrganizationUserAdminResetPassword,
 		orgUuid: orgId,
 		actUserUuid: actor.uuid,
@@ -1431,7 +1439,7 @@ orgMemberRoutes.put(
 			.set({ resetPasswordKey })
 			.where(eq(usersOrganizations.uuid, memberId))
 
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: resetPasswordKey
 				? EventType.OrganizationUserResetPasswordEnroll
 				: EventType.OrganizationUserResetPasswordWithdraw,

@@ -3,10 +3,12 @@ import { Hono } from "hono"
 import type { Context } from "hono"
 
 import { requireAuth, auth } from "../auth/middleware"
+import { webauthnSupported, yubicoConfigured } from "../config"
 import { verifyPassword } from "../crypto"
 import { devices, nowDb, twofactor, users, type Db, type User } from "../db"
 import type { AppEnv } from "../env"
 import { err } from "../error"
+import { duoApiRequest, getUserDuoData, type DuoData } from "../services/duo"
 import { logUserEvent } from "../services/events"
 import { createMailer, mail } from "../services/mail"
 import {
@@ -16,6 +18,13 @@ import {
 	type EmailTokenData
 } from "../services/twofactor"
 import { findUserByEmail } from "../services/users"
+import {
+	finishWebauthnRegistration,
+	getWebauthnRegistrations,
+	startWebauthnRegistration,
+	type WebauthnRegistration
+} from "../services/webauthn"
+import { verifyYubikeyOtp, type YubikeyMetadata } from "../services/yubikey"
 import { EventType, TwoFactorType } from "../shared"
 import { ci, normalizeEmail, randomBytes, randomNumericCode, uuid } from "../util"
 
@@ -125,7 +134,7 @@ twofactorRoutes.post("/two-factor/recover", async (c) => {
 		.set({ totpRecover: null, updatedAt: nowDb() })
 		.where(eq(users.uuid, user.uuid))
 	await clearTwofactorRemember(db, user.uuid)
-	await logUserEvent(db, EventType.UserRecovered2fa, user.uuid, 14, c.get("ip"))
+	await logUserEvent(db, c.get("config"), EventType.UserRecovered2fa, user.uuid, 14, c.get("ip"))
 	return c.json({})
 })
 
@@ -207,7 +216,14 @@ async function activateAuthenticator(c: Ctx) {
 	await ensureRecoveryCode(db, user)
 	await clearTwofactorRemember(db, user.uuid)
 	const { device } = auth(c)
-	await logUserEvent(db, EventType.UserUpdated2fa, user.uuid, device.atype, c.get("ip"))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserUpdated2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
 
 	return c.json({ enabled: true, key: key.toUpperCase(), object: "twoFactorAuthenticator" })
 }
@@ -223,7 +239,14 @@ twofactorRoutes.delete("/two-factor/authenticator", async (c) => {
 		.delete(twofactor)
 		.where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Authenticator)))
 	await clearTwofactorRemember(db, user.uuid)
-	await logUserEvent(db, EventType.UserDisabled2fa, user.uuid, device.atype, c.get("ip"))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserDisabled2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
 	return c.json({ enabled: false, type: TwoFactorType.Authenticator, object: "twoFactorProvider" })
 })
 
@@ -240,7 +263,14 @@ async function disableTwofactor(c: Ctx) {
 		.delete(twofactor)
 		.where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, type)))
 	await clearTwofactorRemember(db, user.uuid)
-	await logUserEvent(db, EventType.UserDisabled2fa, user.uuid, device.atype, c.get("ip"))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserDisabled2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
 
 	// When the last provider is removed, drop the recovery code (vaultwarden behavior)
 	const remaining = await findTwoFactors(db, user.uuid)
@@ -336,7 +366,323 @@ twofactorRoutes.put("/two-factor/email", async (c) => {
 
 	await ensureRecoveryCode(db, user)
 	await clearTwofactorRemember(db, user.uuid)
-	await logUserEvent(db, EventType.UserUpdated2fa, user.uuid, device.atype, c.get("ip"))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserUpdated2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
 
 	return c.json({ email: data.email, enabled: true, object: "twoFactorEmail" })
 })
+
+// --- WebAuthn (vaultwarden two_factor/webauthn.rs) ---
+
+function webauthnRegistrationJson(r: WebauthnRegistration) {
+	return { id: r.id, name: r.name, migrated: r.migrated }
+}
+
+twofactorRoutes.post("/two-factor/get-webauthn", async (c) => {
+	if (!webauthnSupported(c.get("config"))) {
+		err("Configured `DOMAIN` is not compatible with Webauthn")
+	}
+	const { user } = auth(c)
+	const body = (await c.req.json()) as Record<string, unknown>
+	await validatePasswordOrOtp(c, user, body)
+
+	const { enabled, registrations } = await getWebauthnRegistrations(c.get("db"), user.uuid)
+	return c.json({
+		enabled,
+		keys: registrations.map(webauthnRegistrationJson),
+		object: "twoFactorWebAuthn"
+	})
+})
+
+twofactorRoutes.post("/two-factor/get-webauthn-challenge", async (c) => {
+	if (!webauthnSupported(c.get("config"))) {
+		err("Configured `DOMAIN` is not compatible with Webauthn")
+	}
+	const { user } = auth(c)
+	const body = (await c.req.json()) as Record<string, unknown>
+	await validatePasswordOrOtp(c, user, body)
+
+	const options = await startWebauthnRegistration(c.get("db"), c.get("config"), user)
+	return c.json(options)
+})
+
+async function activateWebauthn(c: Ctx) {
+	const { user, device } = auth(c)
+	const db = c.get("db")
+	const body = (await c.req.json()) as Record<string, unknown>
+	await validatePasswordOrOtp(c, user, body)
+
+	const entryId = Number(ci(body, "id") ?? 0)
+	const name = String(ci(body, "name") ?? "")
+	const deviceResponse = ci<Record<string, unknown>>(body, "deviceResponse")
+	if (!deviceResponse) err("deviceResponse cannot be blank")
+
+	const registrations = await finishWebauthnRegistration(
+		db,
+		c.get("config"),
+		user.uuid,
+		entryId,
+		name,
+		deviceResponse
+	)
+
+	await ensureRecoveryCode(db, user)
+	await clearTwofactorRemember(db, user.uuid)
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserUpdated2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
+
+	return c.json({
+		enabled: true,
+		keys: registrations.map(webauthnRegistrationJson),
+		object: "twoFactorU2f"
+	})
+}
+twofactorRoutes.post("/two-factor/webauthn", activateWebauthn)
+twofactorRoutes.put("/two-factor/webauthn", activateWebauthn)
+
+twofactorRoutes.delete("/two-factor/webauthn", async (c) => {
+	const { user, device } = auth(c)
+	const db = c.get("db")
+	const body = (await c.req.json()) as Record<string, unknown>
+	const passwordHash = String(ci(body, "masterPasswordHash") ?? "")
+	if (!(await verifyUserPassword(user, passwordHash))) err("Invalid password")
+
+	const entryId = Number(ci(body, "id") ?? 0)
+	const row = await db.query.twofactor.findFirst({
+		where: and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Webauthn))
+	})
+	if (!row) err("Webauthn data not found!")
+
+	const registrations = JSON.parse(row.data) as WebauthnRegistration[]
+	const idx = registrations.findIndex((r) => r.id === entryId)
+	if (idx < 0) err("Webauthn entry not found")
+	registrations.splice(idx, 1)
+
+	await db
+		.update(twofactor)
+		.set({ data: JSON.stringify(registrations) })
+		.where(eq(twofactor.uuid, row.uuid))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserDisabled2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
+
+	return c.json({
+		enabled: true,
+		keys: registrations.map(webauthnRegistrationJson),
+		object: "twoFactorU2f"
+	})
+})
+
+// --- YubiKey OTP (vaultwarden two_factor/yubikey.rs) ---
+
+function yubikeyResponseJson(metadata: YubikeyMetadata) {
+	const out: Record<string, unknown> = {
+		enabled: true,
+		nfc: metadata.nfc,
+		object: "twoFactorU2f"
+	}
+	metadata.keys.forEach((key, i) => {
+		out[`Key${i + 1}`] = key
+	})
+	return out
+}
+
+twofactorRoutes.post("/two-factor/get-yubikey", async (c) => {
+	const config = c.get("config")
+	if (!yubicoConfigured(config)) {
+		err(
+			"`YUBICO_CLIENT_ID` or `YUBICO_SECRET_KEY` environment variable is not set. Yubikey OTP Disabled"
+		)
+	}
+	const { user } = auth(c)
+	const body = (await c.req.json()) as Record<string, unknown>
+	await validatePasswordOrOtp(c, user, body)
+
+	const row = await c.get("db").query.twofactor.findFirst({
+		where: and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.YubiKey))
+	})
+	if (!row) return c.json({ enabled: false, object: "twoFactorU2f" })
+	return c.json(yubikeyResponseJson(JSON.parse(row.data) as YubikeyMetadata))
+})
+
+async function activateYubikey(c: Ctx) {
+	const { user, device } = auth(c)
+	const db = c.get("db")
+	const config = c.get("config")
+	const body = (await c.req.json()) as Record<string, unknown>
+	await validatePasswordOrOtp(c, user, body)
+
+	const keys = [1, 2, 3, 4, 5]
+		.map((i) => ci<string>(body, `key${i}`))
+		.filter((k): k is string => Boolean(k))
+
+	if (keys.length === 0) {
+		await db
+			.delete(twofactor)
+			.where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.YubiKey)))
+		return c.json({ enabled: false, object: "twoFactorU2f" })
+	}
+
+	// Full-length values are fresh OTPs — verify them against YubiCloud.
+	// 12-char values are already-registered key ids being re-submitted.
+	for (const key of keys) {
+		if (key.length === 12) continue
+		await verifyYubikeyOtp(config, key)
+	}
+
+	const metadata: YubikeyMetadata = {
+		keys: keys.map((k) => k.slice(0, 12)),
+		nfc: Boolean(ci(body, "nfc"))
+	}
+
+	await db
+		.delete(twofactor)
+		.where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.YubiKey)))
+	await db.insert(twofactor).values({
+		uuid: uuid(),
+		userUuid: user.uuid,
+		atype: TwoFactorType.YubiKey,
+		enabled: true,
+		data: JSON.stringify(metadata),
+		lastUsed: 0
+	})
+
+	await ensureRecoveryCode(db, user)
+	await clearTwofactorRemember(db, user.uuid)
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserUpdated2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
+
+	return c.json(yubikeyResponseJson(metadata))
+}
+twofactorRoutes.post("/two-factor/yubikey", activateYubikey)
+twofactorRoutes.put("/two-factor/yubikey", activateYubikey)
+
+// --- Duo (vaultwarden two_factor/duo.rs — Universal Prompt only) ---
+
+const DUO_SECRET_PLACEHOLDER = "<global_secret>"
+const DUO_DISABLED_PLACEHOLDER = "<To use the global Duo keys, please leave these fields untouched>"
+
+function obscureDuo(data: DuoData): DuoData {
+	const mask = (s: string) => s.slice(0, 4) + "************"
+	return { host: mask(data.host), ik: mask(data.ik), sk: mask(data.sk) }
+}
+
+twofactorRoutes.post("/two-factor/get-duo", async (c) => {
+	const { user } = auth(c)
+	const body = (await c.req.json()) as Record<string, unknown>
+	await validatePasswordOrOtp(c, user, body)
+
+	const status = await getUserDuoData(c.get("db"), c.get("config"), user.uuid)
+	let enabled: boolean
+	let data: DuoData | null
+	if (status.kind === "global") {
+		enabled = true
+		data = { host: DUO_SECRET_PLACEHOLDER, ik: DUO_SECRET_PLACEHOLDER, sk: DUO_SECRET_PLACEHOLDER }
+	} else if (status.kind === "user") {
+		enabled = true
+		data = obscureDuo(status.data)
+	} else {
+		enabled = false
+		data = status.hasGlobal
+			? {
+					host: DUO_DISABLED_PLACEHOLDER,
+					ik: DUO_DISABLED_PLACEHOLDER,
+					sk: DUO_DISABLED_PLACEHOLDER
+				}
+			: null
+	}
+
+	return c.json({
+		enabled,
+		host: data?.host ?? null,
+		clientSecret: data?.sk ?? null,
+		clientId: data?.ik ?? null,
+		object: "twoFactorDuo"
+	})
+})
+
+async function activateDuo(c: Ctx) {
+	const { user, device } = auth(c)
+	const db = c.get("db")
+	const body = (await c.req.json()) as Record<string, unknown>
+	await validatePasswordOrOtp(c, user, body)
+
+	const emptyOrDefault = (s: string) => s.trim() === "" || s === DUO_DISABLED_PLACEHOLDER
+	const host = String(ci(body, "host") ?? "")
+	const clientId = String(ci(body, "clientId") ?? "")
+	const clientSecret = String(ci(body, "clientSecret") ?? "")
+	const useCustom =
+		!emptyOrDefault(host) && !emptyOrDefault(clientId) && !emptyOrDefault(clientSecret)
+
+	let responseData: DuoData
+	let dataStr: string
+	if (useCustom) {
+		const data: DuoData = { host, ik: clientId, sk: clientSecret }
+		await duoApiRequest("GET", "/auth/v2/check", "", data)
+		responseData = obscureDuo(data)
+		dataStr = JSON.stringify(data)
+	} else {
+		responseData = {
+			host: DUO_SECRET_PLACEHOLDER,
+			ik: DUO_SECRET_PLACEHOLDER,
+			sk: DUO_SECRET_PLACEHOLDER
+		}
+		dataStr = ""
+	}
+
+	await db
+		.delete(twofactor)
+		.where(and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Duo)))
+	await db.insert(twofactor).values({
+		uuid: uuid(),
+		userUuid: user.uuid,
+		atype: TwoFactorType.Duo,
+		enabled: true,
+		data: dataStr,
+		lastUsed: 0
+	})
+
+	await ensureRecoveryCode(db, user)
+	await clearTwofactorRemember(db, user.uuid)
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserUpdated2fa,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
+
+	return c.json({
+		enabled: true,
+		host: responseData.host,
+		clientSecret: responseData.sk,
+		clientId: responseData.ik,
+		object: "twoFactorDuo"
+	})
+}
+twofactorRoutes.post("/two-factor/duo", activateDuo)
+twofactorRoutes.put("/two-factor/duo", activateDuo)

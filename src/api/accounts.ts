@@ -295,7 +295,14 @@ accountRoutes.post("/accounts/password", async (c) => {
 		})
 		.where(eq(users.uuid, user.uuid))
 
-	await logUserEvent(db, EventType.UserChangedPassword, user.uuid, device.atype, c.get("ip"))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserChangedPassword,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
 	notifier(c).userUpdate(UpdateType.LogOut, user.uuid)
 	return c.body(null, 200)
 })
@@ -403,6 +410,7 @@ accountRoutes.post("/accounts/set-password", async (c) => {
 
 	await logUserEvent(
 		db,
+		c.get("config"),
 		EventType.UserChangedPassword,
 		user.uuid,
 		auth(c).device.atype,

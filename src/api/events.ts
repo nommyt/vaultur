@@ -12,8 +12,8 @@ import { ci, uuid } from "../util"
 
 /**
  * Event log endpoints, ported from vaultwarden src/api/core/events.rs.
- * Event storage/retention is only meaningful when org events are enabled;
- * we always record and serve them (no config gate).
+ * Gated by ORG_EVENTS_ENABLED (vaultur default: on): when disabled, reads
+ * return empty lists and collection is a no-op — nothing is recorded.
  */
 export const eventRoutes = new Hono<AppEnv>()
 export const eventCollectRoutes = new Hono<AppEnv>()
@@ -21,6 +21,8 @@ export const eventCollectRoutes = new Hono<AppEnv>()
 type Ctx = Context<AppEnv>
 
 const EVENT_LIMIT = 300
+
+const EMPTY_LIST = { data: [], object: "list", continuationToken: null }
 
 function eventToJson(e: typeof event.$inferSelect) {
 	return {
@@ -58,6 +60,7 @@ function dateFilters(c: Ctx) {
 eventRoutes.use("*", requireAuth)
 
 eventRoutes.get("/organizations/:orgId/events", async (c) => {
+	if (!c.get("config").orgEventsEnabled) return c.json(EMPTY_LIST)
 	const { user } = auth(c)
 	const orgId = c.req.param("orgId")
 	if (!orgId) notFound("Organization doesn't exist")
@@ -75,6 +78,7 @@ eventRoutes.get("/organizations/:orgId/events", async (c) => {
 })
 
 eventRoutes.get("/organizations/:orgId/users/:memberId/events", async (c) => {
+	if (!c.get("config").orgEventsEnabled) return c.json(EMPTY_LIST)
 	const { user } = auth(c)
 	const orgId = c.req.param("orgId")!
 	const member = await findConfirmedMembership(c.get("db"), user.uuid, orgId)
@@ -97,6 +101,7 @@ eventRoutes.get("/organizations/:orgId/users/:memberId/events", async (c) => {
 })
 
 eventRoutes.get("/ciphers/:id/events", async (c) => {
+	if (!c.get("config").orgEventsEnabled) return c.json(EMPTY_LIST)
 	const { user } = auth(c)
 	const db = c.get("db")
 	const cipher = await db.query.ciphers.findFirst({ where: eq(ciphers.uuid, c.req.param("id")!) })
@@ -118,6 +123,7 @@ eventRoutes.get("/ciphers/:id/events", async (c) => {
 // ---------------------------------------------------------------------------
 
 async function collectHandler(c: Ctx) {
+	if (!c.get("config").orgEventsEnabled) return c.body(null, 200)
 	const { user, device } = auth(c)
 	const db = c.get("db")
 	const body = (await c.req.json()) as unknown

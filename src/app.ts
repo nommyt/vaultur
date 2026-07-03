@@ -76,6 +76,37 @@ export function createApp() {
 	app.route("/admin", adminRoutes)
 	app.get("/alive", (c) => c.json(new Date().toISOString()))
 
+	// FIDO U2F trusted-facets document (vaultwarden web.rs app_id) — advertised
+	// in WebAuthn login options for legacy-key compatibility.
+	app.get("/app-id.json", (c) => {
+		c.header("Content-Type", "application/fido.trusted-apps+json")
+		c.header("Cache-Control", "public, max-age=604800")
+		return c.body(
+			JSON.stringify({
+				trustedFacets: [
+					{
+						version: { major: 1, minor: 0 },
+						ids: [
+							new URL(c.get("config").domain).origin,
+							"ios:bundle-id:com.8bit.bitwarden",
+							"android:apk-key-hash:dUGFzUzf3lmHSLBDBIv+WaFyZMI"
+						]
+					}
+				]
+			})
+		)
+	})
+
+	// iOS passkey/password AutoFill association (vaultwarden web.rs)
+	app.get("/.well-known/apple-app-site-association", (c) => {
+		c.header("Cache-Control", "public, max-age=604800")
+		return c.json({
+			webcredentials: {
+				apps: ["LTZ2PFU5D6.com.8bit.bitwarden", "LTZ2PFU5D6.com.8bit.bitwarden.beta"]
+			}
+		})
+	})
+
 	return app
 }
 

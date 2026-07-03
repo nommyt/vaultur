@@ -3,6 +3,7 @@ import * as OTPAuth from "otpauth"
 
 import { basicClaims, decodeJwt, encodeJwt, issuer } from "../auth/jwt"
 import type { Config } from "../config"
+import { duoGlobalConfigured, webauthnSupported, yubicoConfigured } from "../config"
 import {
 	devices,
 	twofactor,
@@ -20,7 +21,10 @@ import {
 import { err, errJson } from "../error"
 import { MembershipStatus, MembershipType, OrgPolicyType, TwoFactorType } from "../shared"
 import { constantTimeEqualStr, randomNumericCode, uuid } from "../util"
+import { getDuoAuthUrl, validateDuoLogin, type DuoData } from "./duo"
 import { mail, type Mailer } from "./mail"
+import { generateWebauthnLoginOptions, validateWebauthnLogin } from "./webauthn"
+import { validateYubikeyLogin, type YubikeyMetadata } from "./yubikey"
 
 const EMAIL_TOKEN_TTL_SECONDS = 600
 const EMAIL_ATTEMPTS_LIMIT = 3
@@ -251,6 +255,36 @@ export interface TwoFactorLoginData {
 	twoFactorToken?: string
 	twoFactorRemember?: number
 	clientVersion?: string
+	/** Needed for the Duo Universal Prompt callback URL. */
+	clientId?: string
+	deviceIdentifier?: string
+}
+
+/** vaultwarden is_twofactor_provider_usable — config-gated provider availability. */
+function isProviderUsable(config: Config, atype: number, data: string): boolean {
+	switch (atype) {
+		case TwoFactorType.Authenticator:
+		case TwoFactorType.RecoveryCode:
+			return true
+		case TwoFactorType.Email:
+			return config.enableEmail2fa
+		case TwoFactorType.Webauthn:
+			return webauthnSupported(config)
+		case TwoFactorType.YubiKey:
+			return yubicoConfigured(config)
+		case TwoFactorType.Duo:
+		case TwoFactorType.OrganizationDuo: {
+			if (duoGlobalConfigured(config)) return true
+			try {
+				const duo = JSON.parse(data) as DuoData
+				return Boolean(duo.host && duo.ik && duo.sk)
+			} catch {
+				return false
+			}
+		}
+		default:
+			return false
+	}
 }
 
 export async function twofactorAuth(
@@ -282,9 +316,8 @@ export async function twofactorAuth(
 		})
 		.onConflictDoNothing()
 
-	const SUPPORTED = new Set<number>([TwoFactorType.Authenticator, TwoFactorType.Email])
 	const providerIds = twofactors
-		.filter((tf) => tf.enabled && SUPPORTED.has(tf.atype))
+		.filter((tf) => tf.enabled && isProviderUsable(config, tf.atype, tf.data))
 		.map((tf) => tf.atype)
 	if (providerIds.length === 0) {
 		err("No enabled and usable two factor providers are available for this account")
@@ -294,7 +327,7 @@ export async function twofactorAuth(
 	const special = [TwoFactorType.Remember, TwoFactorType.RecoveryCode] as number[]
 	if (!special.includes(selectedId) && !providerIds.includes(selectedId)) {
 		errJson(
-			await jsonErrTwofactor(db, mailer, config, providerIds, user.uuid, data, ip),
+			await jsonErrTwofactor(db, mailer, config, providerIds, user, data, ip),
 			"Invalid two factor provider"
 		)
 	}
@@ -302,7 +335,7 @@ export async function twofactorAuth(
 	const code = data.twoFactorToken
 	if (!code) {
 		errJson(
-			await jsonErrTwofactor(db, mailer, config, providerIds, user.uuid, data, ip),
+			await jsonErrTwofactor(db, mailer, config, providerIds, user, data, ip),
 			"2FA token not provided"
 		)
 	}
@@ -313,6 +346,29 @@ export async function twofactorAuth(
 		case TwoFactorType.Authenticator: {
 			if (!selected) err("Two factor doesn't exist")
 			await validateTotpCode(db, user.uuid, code, selected.data, ip)
+			break
+		}
+		case TwoFactorType.Webauthn: {
+			await validateWebauthnLogin(db, config, user.uuid, code)
+			break
+		}
+		case TwoFactorType.YubiKey: {
+			if (!selected) err("Two factor doesn't exist")
+			await validateYubikeyLogin(config, code, selected.data)
+			break
+		}
+		case TwoFactorType.Duo: {
+			if (!data.clientId || !data.deviceIdentifier)
+				err("Duo requires a client_id and device identifier")
+			await validateDuoLogin(
+				db,
+				config,
+				user.uuid,
+				user.email,
+				code,
+				data.clientId,
+				data.deviceIdentifier
+			)
 			break
 		}
 		case TwoFactorType.Email: {
@@ -327,7 +383,7 @@ export async function twofactorAuth(
 				(await isValidRememberToken(config, secret, code, device))
 			if (!ok) {
 				errJson(
-					await jsonErrTwofactor(db, mailer, config, providerIds, user.uuid, data, ip),
+					await jsonErrTwofactor(db, mailer, config, providerIds, user, data, ip),
 					"2FA Remember token not provided or expired"
 				)
 			}
@@ -374,7 +430,7 @@ async function jsonErrTwofactor(
 	mailer: Mailer,
 	config: Config,
 	providers: number[],
-	userUuid: string,
+	user: User,
 	data: TwoFactorLoginData,
 	ip: string
 ): Promise<Record<string, unknown>> {
@@ -382,19 +438,51 @@ async function jsonErrTwofactor(
 
 	for (const provider of providers) {
 		providers2[String(provider)] = null
-		if (provider === TwoFactorType.Email) {
-			const record = await db.query.twofactor.findFirst({
-				where: and(eq(twofactor.userUuid, userUuid), eq(twofactor.atype, TwoFactorType.Email))
-			})
-			if (!record) err("No twofactor email registered")
-			const tokenData = JSON.parse(record.data) as EmailTokenData
-
-			// Clients >= 2025.5.0 call /api/two-factor/send-email-login themselves.
-			const clientSendsItself = versionGte(data.clientVersion, [2025, 5, 0])
-			if (providers.length === 1 && !clientSendsItself) {
-				await sendEmailLoginToken(db, mailer, config, userUuid, ip)
+		switch (provider) {
+			case TwoFactorType.Webauthn: {
+				if (!webauthnSupported(config)) break
+				providers2[String(provider)] = await generateWebauthnLoginOptions(db, config, user.uuid)
+				break
 			}
-			providers2[String(provider)] = { Email: obscureEmail(tokenData.email) }
+			case TwoFactorType.Duo: {
+				if (!data.clientId || !data.deviceIdentifier) {
+					err("Duo requires a client_id and device identifier")
+				}
+				const authUrl = await getDuoAuthUrl(
+					db,
+					config,
+					user.uuid,
+					user.email,
+					data.clientId,
+					data.deviceIdentifier
+				)
+				providers2[String(provider)] = { AuthUrl: authUrl }
+				break
+			}
+			case TwoFactorType.YubiKey: {
+				const record = await db.query.twofactor.findFirst({
+					where: and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.YubiKey))
+				})
+				if (!record) err("No YubiKey devices registered")
+				const metadata = JSON.parse(record.data) as YubikeyMetadata
+				providers2[String(provider)] = { Nfc: metadata.nfc }
+				break
+			}
+			case TwoFactorType.Email: {
+				const record = await db.query.twofactor.findFirst({
+					where: and(eq(twofactor.userUuid, user.uuid), eq(twofactor.atype, TwoFactorType.Email))
+				})
+				if (!record) err("No twofactor email registered")
+				const tokenData = JSON.parse(record.data) as EmailTokenData
+
+				// Clients >= 2025.5.0 call /api/two-factor/send-email-login themselves.
+				const clientSendsItself = versionGte(data.clientVersion, [2025, 5, 0])
+				if (providers.length === 1 && !clientSendsItself) {
+					await sendEmailLoginToken(db, mailer, config, user.uuid, ip)
+				}
+				providers2[String(provider)] = { Email: obscureEmail(tokenData.email) }
+				break
+			}
 		}
 	}
 

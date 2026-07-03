@@ -1,14 +1,21 @@
+import type { Config } from "../config"
 import { event, nowDb, type Db } from "../db"
 import { uuid } from "../util"
 
-/** Append a user event row (vaultwarden log_user_event). Best-effort. */
+/**
+ * Event logging (vaultwarden log_user_event / log_event). Best-effort; writes
+ * are skipped entirely when the admin disables the event log
+ * (ORG_EVENTS_ENABLED), matching vaultwarden.
+ */
 export async function logUserEvent(
 	db: Db,
+	config: Config,
 	eventType: number,
 	userUuid: string,
 	deviceType: number | null,
 	ip: string
 ): Promise<void> {
+	if (!config.orgEventsEnabled) return
 	try {
 		await db.insert(event).values({
 			uuid: uuid(),
@@ -38,7 +45,8 @@ export interface OrgEventInput {
 }
 
 /** Append an organization event row (vaultwarden log_event). Best-effort. */
-export async function logOrgEvent(db: Db, input: OrgEventInput): Promise<void> {
+export async function logOrgEvent(db: Db, config: Config, input: OrgEventInput): Promise<void> {
+	if (!config.orgEventsEnabled) return
 	try {
 		await db.insert(event).values({
 			uuid: uuid(),

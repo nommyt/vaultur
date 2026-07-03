@@ -5,6 +5,8 @@
  * via {@link applyOverrides}; secrets (ADMIN_TOKEN, JWT_SECRET, push keys) are
  * never editable and never persisted — they live in read-only fields.
  */
+import { isEqual } from "es-toolkit"
+
 import type { Config } from "./config"
 
 export type FieldType = "text" | "number" | "checkbox" | "password" | "select"
@@ -167,6 +169,32 @@ export const SETTINGS_GROUPS: SettingGroup[] = [
 		]
 	},
 	{
+		group: "org_features",
+		label: "Organization Features",
+		fields: [
+			{
+				// Bitwarden gates groups behind Enterprise; free to enable here.
+				name: "org_groups_enabled",
+				label: "Enable organization groups",
+				type: "checkbox",
+				description:
+					"Group-based collection access. Free in Vaultur (a paid Enterprise feature in Bitwarden). Off by default, matching vaultwarden.",
+				get: (c) => c.orgGroupsEnabled,
+				apply: (c, v) => (c.orgGroupsEnabled = b(v))
+			},
+			{
+				// Bitwarden gates the event log behind Enterprise; free to enable here.
+				name: "org_events_enabled",
+				label: "Enable event logs",
+				type: "checkbox",
+				description:
+					"Organization and user audit event logging. Free in Vaultur (a paid Enterprise feature in Bitwarden). Off by default, matching vaultwarden.",
+				get: (c) => c.orgEventsEnabled,
+				apply: (c, v) => (c.orgEventsEnabled = b(v))
+			}
+		]
+	},
+	{
 		group: "icons",
 		label: "Icon Settings",
 		fields: [
@@ -223,6 +251,15 @@ export const SETTINGS_GROUPS: SettingGroup[] = [
 				default: "Vaultur",
 				get: (c) => c.emailFromName,
 				apply: (c, v) => (c.emailFromName = str(v) || "Vaultur")
+			},
+			{
+				name: "_enable_email_2fa",
+				label: "Enable email 2FA",
+				type: "checkbox",
+				description:
+					"Allow email-based two-factor. Defaults to on whenever email is configured (VAULTUR_EMAIL binding + From address).",
+				get: (c) => c.enableEmail2fa,
+				apply: (c, v) => (c.enableEmail2fa = b(v))
 			}
 		]
 	},
@@ -256,6 +293,165 @@ export const SETTINGS_GROUPS: SettingGroup[] = [
 				default: "https://identity.bitwarden.com",
 				get: (c) => c.pushIdentityUri,
 				apply: (c, v) => (c.pushIdentityUri = str(v) || "https://identity.bitwarden.com")
+			}
+		]
+	},
+	{
+		group: "yubico",
+		label: "Yubikey Settings",
+		fields: [
+			{
+				name: "_enable_yubico",
+				label: "Enable YubiKey OTP",
+				type: "checkbox",
+				description: "Master switch for YubiKey OTP two-factor. Requires client id + secret below.",
+				get: (c) => c.enableYubico,
+				apply: (c, v) => (c.enableYubico = b(v))
+			},
+			{
+				name: "yubico_client_id",
+				label: "Yubico Client ID",
+				type: "text",
+				description: "YubiCloud API client id (register at upgrade.yubico.com/getapikey).",
+				get: (c) => c.yubicoClientId,
+				apply: (c, v) => (c.yubicoClientId = str(v))
+			},
+			{
+				name: "yubico_secret_key",
+				label: "Yubico Secret Key",
+				type: "password",
+				description: "YubiCloud API secret key (base64).",
+				get: (c) => c.yubicoSecretKey,
+				apply: (c, v) => (c.yubicoSecretKey = str(v))
+			},
+			{
+				name: "yubico_server",
+				label: "Yubico Server",
+				type: "text",
+				description: "OTP validation server. Leave the default for YubiCloud.",
+				default: "https://api.yubico.com/wsapi/2.0/verify",
+				get: (c) => c.yubicoServer,
+				apply: (c, v) => (c.yubicoServer = str(v) || "https://api.yubico.com/wsapi/2.0/verify")
+			}
+		]
+	},
+	{
+		group: "duo",
+		label: "Global Duo Settings",
+		fields: [
+			{
+				name: "_enable_duo",
+				label: "Enable Duo",
+				type: "checkbox",
+				description:
+					"Master switch for the global Duo credentials below. Disabling hides the global keys but leaves per-user Duo configs intact.",
+				get: (c) => c.enableDuo,
+				apply: (c, v) => (c.enableDuo = b(v))
+			},
+			{
+				name: "duo_ikey",
+				label: "Duo Client Id",
+				type: "text",
+				description: "Client id of the Duo 'Web SDK' application (Universal Prompt).",
+				get: (c) => c.duoIkey,
+				apply: (c, v) => (c.duoIkey = str(v))
+			},
+			{
+				name: "duo_skey",
+				label: "Duo Client Secret",
+				type: "password",
+				description: "Client secret of the Duo 'Web SDK' application.",
+				get: (c) => c.duoSkey,
+				apply: (c, v) => (c.duoSkey = str(v))
+			},
+			{
+				name: "duo_host",
+				label: "Duo API Hostname",
+				type: "text",
+				description: "Your Duo API hostname, e.g. api-xxxxxxxx.duosecurity.com.",
+				get: (c) => c.duoHost,
+				apply: (c, v) => (c.duoHost = str(v))
+			}
+		]
+	},
+	{
+		group: "sso",
+		label: "OIDC Single Sign-On",
+		fields: [
+			{
+				name: "sso_enabled",
+				label: "Enable SSO",
+				type: "checkbox",
+				description: "Allow login through an OpenID Connect identity provider.",
+				get: (c) => c.ssoEnabled,
+				apply: (c, v) => (c.ssoEnabled = b(v))
+			},
+			{
+				name: "sso_only",
+				label: "SSO only",
+				type: "checkbox",
+				description: "Disable master-password login entirely; every login must go through SSO.",
+				get: (c) => c.ssoOnly,
+				apply: (c, v) => (c.ssoOnly = b(v))
+			},
+			{
+				name: "sso_authority",
+				label: "Authority (issuer URL)",
+				type: "text",
+				description: "OIDC issuer base URL; /.well-known/openid-configuration must exist below it.",
+				get: (c) => c.ssoAuthority,
+				apply: (c, v) => (c.ssoAuthority = str(v).replace(/\/+$/, ""))
+			},
+			{
+				name: "sso_client_id",
+				label: "Client ID",
+				type: "text",
+				description: "OIDC client id registered with the provider.",
+				get: (c) => c.ssoClientId,
+				apply: (c, v) => (c.ssoClientId = str(v))
+			},
+			{
+				name: "sso_client_secret",
+				label: "Client Secret",
+				type: "password",
+				description: "OIDC client secret.",
+				get: (c) => c.ssoClientSecret,
+				apply: (c, v) => (c.ssoClientSecret = str(v))
+			},
+			{
+				name: "sso_scopes",
+				label: "Scopes",
+				type: "text",
+				description: "Additional scopes requested from the provider (openid is always added).",
+				default: "email profile",
+				get: (c) => c.ssoScopes,
+				apply: (c, v) => (c.ssoScopes = str(v) || "email profile")
+			},
+			{
+				name: "sso_signups_match_email",
+				label: "Associate existing accounts by email",
+				type: "checkbox",
+				description:
+					"On first SSO login, link to an existing non-SSO account with the same (verified) email.",
+				get: (c) => c.ssoSignupsMatchEmail,
+				apply: (c, v) => (c.ssoSignupsMatchEmail = b(v))
+			},
+			{
+				name: "sso_allow_unknown_email_verification",
+				label: "Allow unknown email verification status",
+				type: "checkbox",
+				description: "Log users in even when the provider does not report an email_verified claim.",
+				get: (c) => c.ssoAllowUnknownEmailVerification,
+				apply: (c, v) => (c.ssoAllowUnknownEmailVerification = b(v))
+			},
+			{
+				name: "sso_pkce",
+				label: "Forward PKCE to the provider",
+				type: "checkbox",
+				description:
+					"Pass the client's PKCE challenge through to the IdP (recommended; disable only for providers without S256 support).",
+				get: (c) => c.ssoPkce,
+				apply: (c, v) => (c.ssoPkce = b(v))
 			}
 		]
 	},
@@ -379,7 +575,7 @@ export function diffOverrides(
 		if (!(name in posted)) continue
 		const parsed = parseByType(field.type, posted[name])
 		const envValue = field.get(envBase)
-		if (JSON.stringify(parsed) !== JSON.stringify(normalizeForCompare(field.type, envValue))) {
+		if (!isEqual(parsed, normalizeForCompare(field.type, envValue))) {
 			out[name] = parsed
 		}
 	}

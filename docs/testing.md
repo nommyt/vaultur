@@ -60,30 +60,44 @@ the protocol level and more granularly than a browser click-through:
 | `organization.spec.ts` (create org, invite/confirm members) | `organizations.spec.ts`, `org-members.spec.ts`                                                                                   |
 | `collection.spec.ts` (create/manage collections)            | `organizations.spec.ts` (collections), `api-surface.spec.ts` (bulk)                                                              |
 | `*.smtp.spec.ts` (email delivery via a mail catcher)        | Mail paths run in no-mail mode in tests; the Email binding is exercised structurally. A live SMTP/MailHog e2e is **not** ported. |
-| `sso_*.spec.ts` (SSO login)                                 | **Out of scope** — see below.                                                                                                    |
+| `sso_*.spec.ts` (SSO login)                                 | `sso.spec.ts` — full OIDC flow against a fetch-mocked IdP with a real RS256 JWKS.                                                |
+
+## Route parity
+
+`route-parity.spec.ts` embeds vaultwarden's entire route table (~245 routes,
+extracted from its `#[get/post/put/delete]` attributes) and fires a request at
+each one, asserting the router actually has it — a missing route or method
+answers 404, a registered one answers 401/400/200/redirect. Regenerate the
+fixture from the sibling checkout with:
+
+```
+grep -rEoh '#\[(get|post|put|delete)\("[^"]+"' ../vaultwarden/src/api --include='*.rs'
+```
+
+External-2FA/SSO specs mock at the fetch layer with `fetchMock` from
+`cloudflare:test`, with real signatures (HMAC-SHA1 YubiCloud, HS512 Duo
+id_tokens, RS256 IdP JWKS), so the verification code runs for real:
+`webauthn.spec.ts`, `yubikey-duo.spec.ts`, `sso.spec.ts`.
 
 ## Deliberately out of scope
 
-These vaultwarden features are intentionally not implemented (and so not
-tested). The web vault surfaces some of their UI, but the endpoints return a
-clear "not available" rather than silently misbehaving:
-
-- **SSO / OpenID Connect** (`/identity/connect/authorize`, `oidc-signin`, prevalidate)
-- **Hardware / advanced 2FA**: WebAuthn/FIDO2, Duo, YubiKey OTP. Supported 2FA:
-  authenticator TOTP, email codes, recovery codes.
 - **Admin-panel DB backup/restore.** The rest of vaultwarden's admin panel —
   login, settings editor (D1-persisted overrides), users, organizations,
-  diagnostics — is ported to `/admin/*` (`admin.spec.ts`). D1 doesn't support
-  the SQLite-file-copy backup vaultwarden's admin panel offers; use
-  Cloudflare's D1 [time travel](https://developers.cloudflare.com/d1/reference/time-travel/)
+  diagnostics — is ported to `/admin/*` (`admin.spec.ts`, `admin-extras.spec.ts`).
+  D1 doesn't support the SQLite-file-copy backup vaultwarden's admin panel
+  offers; use Cloudflare's D1
+  [time travel](https://developers.cloudflare.com/d1/reference/time-travel/)
   or `wrangler d1 export` instead.
+- **bitwarden/server-only Enterprise machinery** vaultwarden doesn't implement
+  either (Secrets Manager, native SCIM, passkey login, Key Connector). See the
+  Non-goals section in the README.
 
 ## Can Vaultur pass vaultwarden's tests?
 
 - **Unit tests**: the security-relevant ones (SSRF, email obscuring) are ported
   and pass. The rest are implementation-specific (opendal, admin panel) and
   don't apply to a Workers/R2 build.
-- **Playwright e2e**: the non-SSO specs exercise flows Vaultur fully implements;
-  pointing that suite at a deployed Vaultur + the bundled web vault is the
-  intended way to run them. Standing up the browser harness is a deployment-time
-  activity rather than part of `pnpm test`. The SSO specs are out of scope.
+- **Playwright e2e**: the specs exercise flows Vaultur fully implements
+  (including SSO); pointing that suite at a deployed Vaultur + the bundled web
+  vault is the intended way to run them. Standing up the browser harness is a
+  deployment-time activity rather than part of `pnpm test`.

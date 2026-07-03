@@ -120,7 +120,14 @@ authRequestRoutes.post("/auth-requests", async (c) => {
 		ar.uuid,
 		deviceIdentifier
 	)
-	await logUserEvent(db, EventType.UserLoggedIn, user.uuid, deviceType, c.get("ip"))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserLoggedIn,
+		user.uuid,
+		deviceType,
+		c.get("ip")
+	)
 
 	return c.json(authRequestJson(ar, c.get("config").domain, { includeKey: false }))
 })

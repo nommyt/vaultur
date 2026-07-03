@@ -1,10 +1,12 @@
 import { and, eq } from "drizzle-orm"
 import { Hono } from "hono"
 import type { Context } from "hono"
+import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 
 import { basicClaims, decodeJwt, encodeJwt, issuer } from "../auth/jwt"
 import { createAuthTokens, type AuthMethod } from "../auth/tokens"
 import type { Config } from "../config"
+import { ssoConfigured } from "../config"
 import { verifyPassword } from "../crypto"
 import {
 	authRequests,
@@ -14,6 +16,7 @@ import {
 	nowDb,
 	fromDb,
 	organizationApiKey,
+	ssoUsers,
 	users,
 	usersOrganizations,
 	type Db,
@@ -26,10 +29,17 @@ import { logUserEvent } from "../services/events"
 import { createMailer, mail, type Mailer } from "../services/mail"
 import { masterPasswordPolicy } from "../services/policies"
 import { checkLoginRateLimit } from "../services/ratelimit"
+import {
+	buildAuthorizeUrl,
+	exchangeCode,
+	handleOidcCallback,
+	redeemSsoAuth,
+	sha256Hex
+} from "../services/sso"
 import { twofactorAuth } from "../services/twofactor"
 import { findUserByEmail, newUserShell, passwordFields, touchUser } from "../services/users"
 import { DeviceType, EventType, KdfType, MembershipStatus } from "../shared"
-import { ci, constantTimeEqualStr, normalizeEmail, uuid } from "../util"
+import { ci, constantTimeEqualStr, normalizeEmail, randomBytes, uuid } from "../util"
 
 export const identityRoutes = new Hono<AppEnv>()
 
@@ -53,6 +63,8 @@ interface ConnectData {
 	twoFactorProvider?: number
 	twoFactorRemember?: number
 	authRequest?: string
+	code?: string
+	codeVerifier?: string
 }
 
 function parseConnectData(form: Record<string, string>): ConnectData {
@@ -83,7 +95,9 @@ function parseConnectData(form: Record<string, string>): ConnectData {
 		twoFactorToken: get("two_factor_token", "twoFactorToken"),
 		twoFactorProvider: num(get("two_factor_provider", "twoFactorProvider")),
 		twoFactorRemember: num(get("two_factor_remember", "twoFactorRemember")),
-		authRequest: get("auth_request", "authRequest")
+		authRequest: get("auth_request", "authRequest"),
+		code: get("code"),
+		codeVerifier: get("code_verifier", "codeVerifier")
 	}
 }
 
@@ -109,6 +123,7 @@ identityRoutes.post("/connect/token", async (c) => {
 			return refreshLogin(c, db, config, data)
 		}
 		case "password": {
+			if (ssoConfigured(config) && config.ssoOnly) err("SSO sign-in is required")
 			checkPresent(data, [
 				"clientId",
 				"password",
@@ -131,9 +146,11 @@ identityRoutes.post("/connect/token", async (c) => {
 			])
 			return apiKeyLogin(c, db, config, data, ip)
 		}
-		case "authorization_code":
-			err("SSO sign-in is not available")
-			break
+		case "authorization_code": {
+			if (!ssoConfigured(config)) err("SSO sign-in is not available")
+			checkPresent(data, ["clientId", "code", "deviceIdentifier", "deviceName", "deviceType"])
+			return ssoLogin(c, db, config, data, ip)
+		}
 		default:
 			err("Invalid type")
 	}
@@ -185,7 +202,14 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 	}
 
 	if (!user.enabled) {
-		await logUserEvent(db, EventType.UserFailedLogIn, user.uuid, Number(data.deviceType ?? 14), ip)
+		await logUserEvent(
+			db,
+			c.get("config"),
+			EventType.UserFailedLogIn,
+			user.uuid,
+			Number(data.deviceType ?? 14),
+			ip
+		)
 		err("This user has been disabled")
 	}
 
@@ -197,6 +221,7 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 		if (!authRequest) {
 			await logUserEvent(
 				db,
+				c.get("config"),
 				EventType.UserFailedLogIn,
 				user.uuid,
 				Number(data.deviceType ?? 14),
@@ -209,6 +234,7 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 		if (!authRequest.approved || expired || authRequest.requestIp !== ip || !codeOk) {
 			await logUserEvent(
 				db,
+				c.get("config"),
 				EventType.UserFailedLogIn,
 				user.uuid,
 				Number(data.deviceType ?? 14),
@@ -225,6 +251,7 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 		if (!valid) {
 			await logUserEvent(
 				db,
+				c.get("config"),
 				EventType.UserFailedLogIn,
 				user.uuid,
 				Number(data.deviceType ?? 14),
@@ -267,7 +294,9 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 			twoFactorProvider: data.twoFactorProvider,
 			twoFactorToken: data.twoFactorToken,
 			twoFactorRemember: data.twoFactorRemember,
-			clientVersion: c.req.header("Bitwarden-Client-Version")
+			clientVersion: c.req.header("Bitwarden-Client-Version"),
+			clientId: data.clientId,
+			deviceIdentifier: data.deviceIdentifier
 		},
 		ip
 	)
@@ -296,7 +325,173 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 		"Password",
 		data.clientId
 	)
-	await logUserEvent(db, EventType.UserLoggedIn, user.uuid, device.atype, ip)
+	await logUserEvent(db, c.get("config"), EventType.UserLoggedIn, user.uuid, device.atype, ip)
+
+	return c.json(await authenticatedResponse(db, user, tokens, twofactorToken))
+}
+
+/**
+ * grant_type=authorization_code — OIDC SSO login (vaultwarden sso_login).
+ * The code was minted by the IdP and relayed to the client via
+ * /connect/oidc-signin; here it is exchanged (once) and the user is
+ * provisioned/linked per the SSO_SIGNUPS_MATCH_EMAIL rules.
+ */
+async function ssoLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip: string) {
+	if (data.scope !== "api offline_access") err("Scope not supported")
+	await checkLoginRateLimit(c.env.VAULTUR_KV, config, ip)
+	if (!data.codeVerifier) err("Got no code verifier in OIDC data")
+
+	const { row, authUser } = await exchangeCode(
+		db,
+		config,
+		c.env.VAULTUR_KV,
+		data.code!,
+		data.codeVerifier
+	)
+
+	const deviceType = Number(data.deviceType ?? 14)
+	const mailer = createMailer(c.env.VAULTUR_EMAIL, config)
+
+	// Resolve the OIDC identity to a local user
+	const link = await db.query.ssoUsers.findFirst({
+		where: eq(ssoUsers.identifier, authUser.identifier)
+	})
+	let user: User | undefined
+	let alreadyLinked = false
+
+	if (link) {
+		alreadyLinked = true
+		user = await db.query.users.findFirst({ where: eq(users.uuid, link.userUuid) })
+		if (!user) err("Invalid SSO association")
+	} else {
+		const byEmail = await findUserByEmail(db, authUser.email)
+		if (byEmail) {
+			const otherLink = await db.query.ssoUsers.findFirst({
+				where: eq(ssoUsers.userUuid, byEmail.uuid)
+			})
+			if (otherLink) {
+				await logUserEvent(
+					db,
+					c.get("config"),
+					EventType.UserFailedLogIn,
+					byEmail.uuid,
+					deviceType,
+					ip
+				)
+				err("Existing SSO user with same email")
+			}
+			if (byEmail.privateKey != null && !config.ssoSignupsMatchEmail) {
+				await logUserEvent(
+					db,
+					c.get("config"),
+					EventType.UserFailedLogIn,
+					byEmail.uuid,
+					deviceType,
+					ip
+				)
+				err("Existing non SSO user with same email and association is disabled")
+			}
+			if (authUser.emailVerified == null && !config.ssoAllowUnknownEmailVerification) {
+				err("Email verification status is unknown from the SSO provider")
+			}
+			if (authUser.emailVerified === false) {
+				err("Email is not verified by the SSO provider")
+			}
+			user = byEmail
+		}
+	}
+
+	if (!user) {
+		// First login of an unknown identity — provision a new account
+		if (
+			config.signupsDomainsWhitelist.length > 0 &&
+			!config.signupsDomainsWhitelist.includes(authUser.email.split("@")[1] ?? "")
+		) {
+			err("Email domain not allowed")
+		}
+		if (authUser.emailVerified == null && !config.ssoAllowUnknownEmailVerification) {
+			err(
+				"Your provider does not send email verification status. You will need to change the server configuration (check `SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION`) to log in."
+			)
+		}
+		if (authUser.emailVerified === false) {
+			err("You need to verify your email with your provider before you can log in")
+		}
+		const shell = newUserShell(authUser.email, authUser.userName)
+		shell.verifiedAt = nowDb()
+		await db.insert(users).values(shell)
+		user = (await db.query.users.findFirst({ where: eq(users.uuid, shell.uuid!) }))!
+	}
+
+	if (!user.enabled) err("This user has been disabled")
+
+	const { device, isNew } = await getOrCreateDevice(
+		db,
+		{
+			deviceIdentifier: data.deviceIdentifier!,
+			deviceName: data.deviceName!,
+			deviceType: Number.parseInt(data.deviceType ?? "14", 10) || 14
+		},
+		user.uuid
+	)
+
+	// Will 400 with the TwoFactorProviders payload when a second factor is needed;
+	// the client then re-submits the same code+verifier with the 2FA token.
+	const twofactorToken = await twofactorAuth(
+		db,
+		mailer,
+		config,
+		c.env.JWT_SECRET,
+		user,
+		device,
+		{
+			twoFactorProvider: data.twoFactorProvider,
+			twoFactorToken: data.twoFactorToken,
+			twoFactorRemember: data.twoFactorRemember,
+			clientVersion: c.req.header("Bitwarden-Client-Version"),
+			clientId: data.clientId,
+			deviceIdentifier: data.deviceIdentifier
+		},
+		ip
+	)
+
+	// Invited users get a stub account — complete it on first SSO login
+	if (user.privateKey == null) {
+		const patch: Partial<User> = { verifiedAt: user.verifiedAt ?? nowDb(), updatedAt: nowDb() }
+		if (authUser.userName) patch.name = authUser.userName
+		await db.update(users).set(patch).where(eq(users.uuid, user.uuid))
+	}
+
+	if (user.email !== authUser.email && mailer.enabled) {
+		c.executionCtx.waitUntil(mail.ssoEmailDrift(mailer, config, authUser.email))
+	}
+
+	if (mailer.enabled && isNew) {
+		c.executionCtx.waitUntil(
+			mail.newDeviceLoggedIn(
+				mailer,
+				config,
+				user.email,
+				device.name,
+				String(device.atype),
+				ip,
+				new Date().toUTCString()
+			)
+		)
+	}
+
+	await redeemSsoAuth(db, row, user.uuid, authUser.identifier, alreadyLinked)
+	await touchDevice(db, device)
+
+	const tokens = await createAuthTokens(
+		config,
+		c.env.JWT_SECRET,
+		device,
+		user,
+		"Sso",
+		data.clientId
+	)
+	await logUserEvent(db, c.get("config"), EventType.UserLoggedIn, user.uuid, device.atype, ip)
 
 	return c.json(await authenticatedResponse(db, user, tokens, twofactorToken))
 }
@@ -374,7 +569,14 @@ async function apiKeyLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip
 	if (!user) err("Invalid client_id")
 	if (!user.enabled) err("This user has been disabled (API key login)")
 	if (!user.apiKey || !constantTimeEqualStr(user.apiKey, data.clientSecret!)) {
-		await logUserEvent(db, EventType.UserFailedLogIn, user.uuid, Number(data.deviceType ?? 14), ip)
+		await logUserEvent(
+			db,
+			c.get("config"),
+			EventType.UserFailedLogIn,
+			user.uuid,
+			Number(data.deviceType ?? 14),
+			ip
+		)
 		err("Incorrect client_secret")
 	}
 
@@ -412,7 +614,7 @@ async function apiKeyLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip
 		"UserApiKey",
 		data.clientId
 	)
-	await logUserEvent(db, EventType.UserLoggedIn, user.uuid, device.atype, ip)
+	await logUserEvent(db, c.get("config"), EventType.UserLoggedIn, user.uuid, device.atype, ip)
 
 	return c.json({
 		access_token: tokens.accessToken,
@@ -839,10 +1041,83 @@ async function hasEmergencyInvite(db: Db, config: Config, email: string): Promis
 	return Boolean(row)
 }
 
-// SSO stubs — Bitwarden clients probe these; report SSO unavailable.
-identityRoutes.get("/account/prevalidate", (c) => {
-	return c.json({ message: "SSO sign-in is not available", object: "error" }, 400)
+// ---------------------------------------------------------------------------
+// OIDC SSO (vaultwarden src/api/identity.rs authorize/oidcsignin/prevalidate)
+// ---------------------------------------------------------------------------
+
+const SSO_BINDING_COOKIE = "VAULTUR_SSO_BINDING"
+const SSO_AUTH_TTL_SECONDS = 10 * 60
+
+// Clients probe this before showing the SSO flow; the token is echoed back on
+// /connect/authorize (ssoToken) but not otherwise consumed.
+function prevalidateHandler(c: Ctx) {
+	const config = c.get("config")
+	if (!ssoConfigured(config)) {
+		return c.json({ message: "SSO sign-in is not available", object: "error" }, 400)
+	}
+	return encodeJwt(
+		c.env.JWT_SECRET,
+		basicClaims({ domain: config.domain, kind: "sso", sub: "vaultur", ttlSeconds: 2 * 60 })
+	).then((token) => c.json({ token }))
+}
+identityRoutes.get("/account/prevalidate", prevalidateHandler)
+identityRoutes.get("/sso/prevalidate", prevalidateHandler)
+
+// Client → IdP hop. Persists the in-flight state and PKCE challenge, binds the
+// flow to this browser via a hashed cookie, then redirects to the IdP.
+identityRoutes.get("/connect/authorize", async (c) => {
+	const config = c.get("config")
+	if (!ssoConfigured(config)) {
+		return c.json({ message: "SSO sign-in is not available", object: "error" }, 400)
+	}
+
+	const q = (name: string, alt?: string) =>
+		c.req.query(name) ?? (alt ? c.req.query(alt) : undefined)
+	const state = q("state")
+	const codeChallenge = q("code_challenge", "codeChallenge")
+	const method = q("code_challenge_method", "codeChallengeMethod")
+	const clientId = q("client_id", "clientId")
+	const redirectUri = q("redirect_uri", "redirectUri")
+	if (!state || !codeChallenge || !clientId || !redirectUri) err("Missing SSO parameters")
+	if (method !== "S256") err("Unsupported code challenge method")
+
+	// Browser-binding token: raw value in a cookie, hash in the DB, checked on the callback
+	const bindingToken = Buffer.from(randomBytes(32)).toString("base64url")
+	const authUrl = await buildAuthorizeUrl(c.get("db"), config, c.env.VAULTUR_KV, {
+		state,
+		codeChallenge,
+		clientId,
+		rawRedirectUri: redirectUri,
+		bindingHash: sha256Hex(bindingToken)
+	})
+
+	setCookie(c, SSO_BINDING_COOKIE, bindingToken, {
+		path: "/identity/connect/",
+		maxAge: SSO_AUTH_TTL_SECONDS,
+		sameSite: "Lax", // the IdP redirect arrives from a different FQDN
+		httpOnly: true,
+		secure: new URL(config.domain).protocol === "https:"
+	})
+	return c.redirect(authUrl, 307)
 })
-identityRoutes.get("/connect/authorize", (c) => {
-	return c.json({ message: "SSO sign-in is not available", object: "error" }, 400)
+
+// IdP → client hop. Records the IdP response (code or error) and bounces the
+// browser back to the Bitwarden client's own callback.
+identityRoutes.get("/connect/oidc-signin", async (c) => {
+	const config = c.get("config")
+	if (!ssoConfigured(config)) {
+		return c.json({ message: "SSO sign-in is not available", object: "error" }, 400)
+	}
+	const base64State = c.req.query("state")
+	if (!base64State) err("state cannot be blank")
+
+	const redirect = await handleOidcCallback(c.get("db"), config, {
+		base64State,
+		code: c.req.query("code") ?? null,
+		error: c.req.query("error") ?? null,
+		errorDescription: c.req.query("error_description") ?? null,
+		bindingCookie: getCookie(c, SSO_BINDING_COOKIE) ?? null
+	})
+	deleteCookie(c, SSO_BINDING_COOKIE, { path: "/identity/connect/" })
+	return c.redirect(redirect, 307)
 })

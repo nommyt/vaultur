@@ -180,7 +180,7 @@ async function createCipher(c: Ctx, data: CipherData, collectionIds?: string[]) 
 				.values({ cipherUuid: cipher.uuid, collectionUuid: col.uuid })
 				.onConflictDoNothing()
 		}
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.CipherCreated,
 			orgUuid: cipher.organizationUuid,
 			actUserUuid: user.uuid,
@@ -246,7 +246,7 @@ async function updateCipherHandler(c: Ctx) {
 	const affected = await usersWithCipherAccess(db, cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid)
 	if (cipher.organizationUuid) {
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.CipherUpdated,
 			orgUuid: cipher.organizationUuid,
 			actUserUuid: user.uuid,
@@ -350,7 +350,14 @@ cipherRoutes.post("/ciphers/import", async (c) => {
 
 	await touchUser(db, user.uuid)
 	notifier(c).userUpdate(UpdateType.SyncVault, user.uuid)
-	await logUserEvent(db, EventType.UserClientExportedVault, user.uuid, device.atype, c.get("ip"))
+	await logUserEvent(
+		db,
+		c.get("config"),
+		EventType.UserClientExportedVault,
+		user.uuid,
+		device.atype,
+		c.get("ip")
+	)
 	return c.body(null, 200)
 })
 
@@ -413,7 +420,7 @@ cipherRoutes.post("/ciphers/import-organization", async (c) => {
 		}
 	}
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.OrganizationClientExportedVault,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,
@@ -518,7 +525,7 @@ async function shareCipher(c: Ctx, cipherId: string, body: Record<string, unknow
 
 	const affected = await usersWithCipherAccess(db, cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid)
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.CipherShared,
 		orgUuid: cipher.organizationUuid!,
 		actUserUuid: user.uuid,
@@ -604,7 +611,7 @@ async function updateCipherCollections(c: Ctx) {
 
 	const affected = await updateUsersRevisionForCipher(db, cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid)
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.CipherUpdatedCollections,
 		orgUuid: cipher.organizationUuid!,
 		actUserUuid: user.uuid,
@@ -638,7 +645,7 @@ async function softDelete(c: Ctx, cipher: Cipher) {
 	const affected = await updateUsersRevisionForCipher(db, cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid)
 	if (cipher.organizationUuid) {
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.CipherSoftDeleted,
 			orgUuid: cipher.organizationUuid,
 			actUserUuid: user.uuid,
@@ -656,7 +663,7 @@ async function hardDelete(c: Ctx, cipher: Cipher) {
 	await deleteCipher(db, c.env.VAULTUR_FILES, cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherDelete, cipher, affected, device.uuid)
 	if (cipher.organizationUuid) {
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.CipherDeleted,
 			orgUuid: cipher.organizationUuid,
 			actUserUuid: user.uuid,
@@ -679,7 +686,7 @@ async function restore(c: Ctx, cipher: Cipher) {
 	const affected = await updateUsersRevisionForCipher(db, cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid)
 	if (cipher.organizationUuid) {
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.CipherRestored,
 			orgUuid: cipher.organizationUuid,
 			actUserUuid: user.uuid,
@@ -875,7 +882,7 @@ cipherRoutes.post("/ciphers/purge", async (c) => {
 			err("You do not have permission to purge the organization vault")
 		const orgCiphers = await db.select().from(ciphers).where(eq(ciphers.organizationUuid, orgId))
 		for (const cipher of orgCiphers) await deleteCipher(db, c.env.VAULTUR_FILES, cipher)
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.OrganizationPurgedVault,
 			orgUuid: orgId,
 			actUserUuid: user.uuid,

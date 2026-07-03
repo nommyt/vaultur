@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm"
+import { chunk, partition } from "es-toolkit"
 
 import {
 	archives,
@@ -322,29 +323,29 @@ export async function usersWithCipherAccess(db: Db, cipher: Cipher): Promise<str
 		await db.select().from(ciphersCollections).where(eq(ciphersCollections.cipherUuid, cipher.uuid))
 	).map((r) => r.collectionUuid)
 
-	const result = new Set<string>()
-	const needCheck: typeof members = []
-	for (const m of members) {
-		if (hasFullAccess(m)) result.add(m.userUuid)
-		else needCheck.push(m)
-	}
+	// Full-access members reach every cipher; the rest need a collection check.
+	const [fullAccess, needCheck] = partition(members, hasFullAccess)
+	const result = new Set<string>(fullAccess.map((m) => m.userUuid))
 
 	if (needCheck.length > 0 && collectionIds.length > 0) {
-		const direct = await db
-			.select({ userUuid: usersCollections.userUuid })
-			.from(usersCollections)
-			.where(inArray(usersCollections.collectionUuid, collectionIds))
-		for (const r of direct) result.add(r.userUuid)
-
-		const viaGroups = await db
-			.select({ memberUuid: groupsUsers.usersOrganizationsUuid })
-			.from(collectionsGroups)
-			.innerJoin(groupsUsers, eq(collectionsGroups.groupsUuid, groupsUsers.groupsUuid))
-			.where(inArray(collectionsGroups.collectionsUuid, collectionIds))
 		const memberByUuid = new Map(members.map((m) => [m.uuid, m.userUuid]))
-		for (const r of viaGroups) {
-			const u = memberByUuid.get(r.memberUuid)
-			if (u) result.add(u)
+		// D1 caps bound parameters (~100/query)
+		for (const batch of chunk(collectionIds, 90)) {
+			const direct = await db
+				.select({ userUuid: usersCollections.userUuid })
+				.from(usersCollections)
+				.where(inArray(usersCollections.collectionUuid, batch))
+			for (const r of direct) result.add(r.userUuid)
+
+			const viaGroups = await db
+				.select({ memberUuid: groupsUsers.usersOrganizationsUuid })
+				.from(collectionsGroups)
+				.innerJoin(groupsUsers, eq(collectionsGroups.groupsUuid, groupsUsers.groupsUuid))
+				.where(inArray(collectionsGroups.collectionsUuid, batch))
+			for (const r of viaGroups) {
+				const u = memberByUuid.get(r.memberUuid)
+				if (u) result.add(u)
+			}
 		}
 	}
 
@@ -355,8 +356,9 @@ export async function usersWithCipherAccess(db: Db, cipher: Cipher): Promise<str
 
 export async function updateUsersRevisionForCipher(db: Db, cipher: Cipher): Promise<string[]> {
 	const userIds = await usersWithCipherAccess(db, cipher)
-	if (userIds.length > 0) {
-		await db.update(users).set({ updatedAt: nowDb() }).where(inArray(users.uuid, userIds))
+	// D1 caps bound parameters (~100/query); large orgs can exceed it in one IN()
+	for (const batch of chunk(userIds, 90)) {
+		await db.update(users).set({ updatedAt: nowDb() }).where(inArray(users.uuid, batch))
 	}
 	return userIds
 }

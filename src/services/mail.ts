@@ -204,6 +204,18 @@ export const mail = {
 		)
 	},
 
+	/** The SSO provider reports a different email than the local account (vaultwarden send_sso_change_email). */
+	async ssoEmailDrift(m: Mailer, cfg: Config, to: string) {
+		await send(
+			m,
+			to,
+			"Your email has changed in your SSO provider",
+			"SSO email changed",
+			`<p>Your email address was changed in your SSO provider. Your Vaultur account still uses its original login email; contact your administrator if this is unexpected.</p>`,
+			cfg.domain
+		)
+	},
+
 	async changeEmail(m: Mailer, cfg: Config, to: string, token: string) {
 		await send(
 			m,

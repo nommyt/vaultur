@@ -2,6 +2,8 @@ import { and, eq, isNotNull, lt, sql } from "drizzle-orm"
 
 import { authRequests, ciphers, createDb, sends, toDb, twofactorIncomplete } from "../db"
 import type { Bindings } from "../env"
+import { purgeExpiredDuoContexts } from "../services/duo"
+import { purgeExpiredSsoAuth } from "../services/sso"
 
 /**
  * Cron jobs (vaultwarden's background tasks); both early-out when nothing to purge:
@@ -85,4 +87,8 @@ export async function runScheduledJobs(
 	if (expiredTf.length > 0) {
 		await db.delete(twofactorIncomplete).where(lt(twofactorIncomplete.loginTime, tfCutoff))
 	}
+
+	// Purge expired Duo auth contexts and abandoned in-flight SSO logins
+	await purgeExpiredDuoContexts(db)
+	await purgeExpiredSsoAuth(db)
 }

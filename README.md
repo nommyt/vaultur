@@ -24,6 +24,18 @@ API surface and behavior are ported from it, field for field) and
 deploy-and-forget Cloudflare architecture), rebuilt from scratch in
 TypeScript with full organization support.
 
+**Full vaultwarden parity.** Every route in vaultwarden's API is implemented
+and enforced by an [automated parity test](test/route-parity.spec.ts) that
+fires a request at all ~245 of them. That includes the pieces vaultwarden
+gained most recently — WebAuthn, Duo and YubiKey two-factor, and OpenID
+Connect SSO. Configuration defaults mirror vaultwarden, so an existing
+deployment behaves the same way.
+
+**Full self-hosted feature set.** Vaultur runs the same organization and
+enterprise-oriented features as vaultwarden — groups, event logs, SSO, hardware
+2FA — configured the same way, with the same defaults (see
+[Organization and enterprise features](#organization-and-enterprise-features)).
+
 ## Why Vaultur
 
 Running vaultwarden means owning a server: a box or container that needs
@@ -32,19 +44,24 @@ you use it or not. Vaultur pushes all of that onto Cloudflare's platform —
 there's no process to keep alive and no OS to patch, and the whole thing
 fits inside Cloudflare's free tier for personal/small-team use.
 
-|                                                         | vaultwarden                                      | Vaultur                                                             |
-| ------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------- |
-| Runtime                                                 | Rust binary / Docker container you run and patch | Cloudflare Worker — no server to manage                             |
-| Database                                                | SQLite, MySQL, or PostgreSQL                     | D1 (SQLite at the edge)                                             |
-| Attachments / cache                                     | Local disk or S3 via opendal                     | R2 + KV, native bindings                                            |
-| Scaling                                                 | Manual — bigger box, more replicas               | Automatic, edge-distributed                                         |
-| Typical cost, small team                                | A VPS, running 24/7                              | Cloudflare free tier                                                |
-| Organizations, Send, emergency access, 2FA (TOTP/email) | ✅                                               | ✅                                                                  |
-| Admin panel                                             | ✅                                               | ✅ ported                                                           |
-| SSO / WebAuthn / Duo / YubiKey OTP                      | ✅                                               | ❌ not (yet) supported — see [Roadmap](#roadmap--not-yet-supported) |
+|                                       | vaultwarden                                      | Vaultur                                   |
+| ------------------------------------- | ------------------------------------------------ | ----------------------------------------- |
+| Runtime                               | Rust binary / Docker container you run and patch | Cloudflare Worker — no server to manage   |
+| Database                              | SQLite, MySQL, or PostgreSQL                     | D1 (SQLite at the edge)                   |
+| Attachments / cache                   | Local disk or S3 via opendal                     | R2 + KV, native bindings                  |
+| Scaling                               | Manual — bigger box, more replicas               | Automatic, edge-distributed               |
+| Typical cost, small team              | A VPS, running 24/7                              | Cloudflare free tier                      |
+| Organizations, Send, emergency access | ✅                                               | ✅                                        |
+| 2FA: TOTP, email                      | ✅                                               | ✅                                        |
+| 2FA: WebAuthn, Duo, YubiKey OTP       | ✅                                               | ✅                                        |
+| SSO (OpenID Connect)                  | ✅                                               | ✅                                        |
+| Org groups & event logs               | ✅ (off by default)                              | ✅ (off by default, matches vaultwarden)  |
+| Admin panel                           | ✅                                               | ✅ ported + Cloudflare-specific settings  |
+| Email transport                       | Any SMTP server                                  | Cloudflare Email Sending (no SMTP server) |
 
-If you need SSO or hardware 2FA today, stick with vaultwarden. Otherwise,
-Vaultur trades a small, well-defined set of features for zero ops burden.
+Vaultur trades one thing for zero ops burden: mail goes through Cloudflare
+Email Sending (so you need a domain on Cloudflare DNS) instead of an arbitrary
+SMTP server. Everything else vaultwarden does, Vaultur does.
 
 ## Architecture
 
@@ -78,23 +95,78 @@ Cloudflare binding, not a third-party dependency.
 - **Attachments** on R2 (both the v2 signed upload flow and the older flow
   some clients still use)
 - **Bitwarden Send** (text + file, passwords, access limits)
-- **Two-factor**: authenticator TOTP, email codes, recovery codes,
-  remember-device tokens
+- **Two-factor**: authenticator TOTP, email codes, **WebAuthn/FIDO2**, **Duo**
+  (Universal Prompt), **YubiKey OTP**, recovery codes, remember-device tokens
+- **SSO** via OpenID Connect — discovery, PKCE, id_token verification against
+  the provider's JWKS, and account linking; works with the official clients'
+  SSO login button
 - **Organizations**: collections, member lifecycle (invite → accept →
-  confirm), roles incl. custom/manager, groups, policies (2FA, master
-  password, single-org, personal-ownership, disable-send)
+  confirm), roles incl. custom/manager, groups, account recovery (admin
+  reset-password), policies (2FA, master password, single-org,
+  personal-ownership, disable-send, and more)
 - **Emergency access** (view + takeover)
+- **Event logs** and the directory-connector public import (LDAP/SCIM-style)
 - **Live sync** via SignalR-compatible WebSockets on Durable Objects,
   plus mobile push relay
 - **Email** via the Cloudflare Email Sending binding (no SMTP server) —
   requires a domain on Cloudflare DNS; without one, Vaultur runs in
   no-mail mode
-- **Admin API**, icon proxy with KV cache, event logs, scheduled cleanup jobs
-- **Web vault**: serves the official client (bw_web_builds) as static assets
-- **PBKDF2 offload** (optional): set the `VAULTUR_HEAVY` Durable Object binding
-  to move CPU-heavy password hashing into a DO with a 30s CPU budget —
-  free-tier friendly. Omit it to run inline via `@noble/hashes` (no iteration
-  cap, recommended for paid plans).
+- **Admin panel** (vaultwarden's, ported to Hono JSX), icon proxy with KV
+  cache, scheduled cleanup jobs
+- **Web vault**: serves the official client
+  ([bw_web_builds](https://github.com/dani-garcia/bw_web_builds)) as static
+  assets, with vaultwarden's standard styling
+
+## Organization and enterprise features
+
+Vaultur implements the same organization and enterprise-oriented features as
+vaultwarden — organization groups, event/audit logs, SSO, and the hardware 2FA
+providers — configured exactly as in vaultwarden, with the same environment
+variables and the same defaults, and adjustable from the admin Settings page.
+
+| Feature                      | Default (matches vaultwarden) | Setting                                            |
+| ---------------------------- | ----------------------------- | -------------------------------------------------- |
+| Organization groups          | off                           | `ORG_GROUPS_ENABLED`                               |
+| Event / audit logs           | off                           | `ORG_EVENTS_ENABLED`                               |
+| SSO (OpenID Connect)         | off (opt-in)                  | `SSO_ENABLED`                                      |
+| WebAuthn / Duo / YubiKey 2FA | on (needs credentials)        | `_ENABLE_DUO` / `_ENABLE_YUBICO` / auto (WebAuthn) |
+| Email 2FA                    | on when mail is configured    | `_ENABLE_EMAIL_2FA`                                |
+| Emergency access, Sends      | on                            | `EMERGENCY_ACCESS_ALLOWED` / `SENDS_ALLOWED`       |
+
+Like vaultwarden, groups and event logs are off until you turn them on. If the
+hosted Bitwarden service fits your needs, consider
+[supporting Bitwarden](https://bitwarden.com/pricing/) — they build and maintain
+the apps and protocol this project relies on.
+
+## Admin panel
+
+The admin panel is a Hono-JSX port of vaultwarden's (`/admin`, gated on the
+`ADMIN_TOKEN` secret — the whole surface 404s until it's set). It's
+vaultwarden-parity first: user and organization management, diagnostics, and a
+live-editable settings page whose values are persisted in D1 and layered over
+the env config, so you can change settings without redeploying.
+
+On top of vaultwarden's settings it adds the Cloudflare- and Vaultur-specific
+bits: the Cloudflare Email Sending transport (Vaultur's mail path, in place of
+SMTP host/port/credentials), plus toggles for the features vaultwarden doesn't
+have yet — SSO (OpenID Connect), and per-provider enables for WebAuthn, Duo,
+and YubiKey — and the free-by-default org groups / event-log switches.
+
+## Crypto (PBKDF2)
+
+Bitwarden clients derive a master-password hash, then the server hashes it
+again with PBKDF2 before storing it. workerd caps native PBKDF2 (both WebCrypto
+and `node:crypto`) at 100k iterations in production
+([workerd#1346](https://github.com/cloudflare/workerd/issues/1346)), which is
+well below vaultwarden's 600k default. Vaultur runs PBKDF2 through
+[`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (pure JS, no cap),
+so the real iteration count is honored. SHA-256 and HMAC still use `node:crypto`
+(no cap there).
+
+Pure-JS hashing costs CPU. On the free tier (10ms CPU/request) you can offload
+it: set the `VAULTUR_HEAVY` Durable Object binding and the derivation runs in a
+DO with a 30s CPU budget, transparently to callers. Omit the binding to run
+inline (recommended on paid plans).
 
 ## Quick start
 
@@ -129,12 +201,12 @@ A single Hono worker project:
 
 ```
 src/              Worker source (Hono app, API routes, services)
-  src/api/        Route handlers (23 modules — identity, vault, orgs, admin, ...)
-  src/services/   Business logic (14 modules — auth, mail, push, ssrf, ...)
+  src/api/        Route handlers (23 modules — identity, vault, orgs, admin, 2FA, ...)
+  src/services/   Business logic (19 modules — auth, mail, push, sso, duo, webauthn, yubikey, ...)
   src/db/         Drizzle ORM schema for D1 (1:1 port of vaultwarden's schema)
   src/durable/    Durable Object classes (notifications hub, PBKDF2 offload)
   src/shared/     Protocol enums/constants
-test/             Vitest integration tests (real workerd)
+test/             Vitest integration tests (real workerd), incl. route-parity check
 migrations/       Generated D1 migrations
 scripts/          web-vault fetch/bootstrap helpers
 docs/             Deployment guide and test/parity notes
@@ -157,22 +229,43 @@ pnpm test                  # all tests except Durable Object offload tests
 pnpm test:heavy            # Durable Object PBKDF2 offload tests (separate config)
 ```
 
-See **[docs/testing.md](docs/testing.md)** for what's covered and how it
-maps to vaultwarden's own test suite.
+Every vaultwarden route is covered by an automated parity test
+([test/route-parity.spec.ts](test/route-parity.spec.ts)) that fires a request
+at all ~245 of them and fails if any is missing. External services (YubiCloud,
+Duo, OIDC providers) are mocked at the fetch layer with real signatures, so the
+2FA/SSO verification paths run for real. See
+**[docs/testing.md](docs/testing.md)** for the full map.
 
-## Roadmap / not (yet) supported
+## Implementation notes
 
-Deliberately out of scope for now — the web vault surfaces some of this UI,
-but the endpoints return a clear "not available" rather than silently
-misbehaving:
+A few deliberate deviations from vaultwarden, made for the Workers platform or
+because the upstream behavior is itself legacy:
 
-- **SSO / OpenID Connect**
-- **Hardware / advanced 2FA**: WebAuthn/FIDO2, Duo, YubiKey OTP
-- **Admin-panel DB backup/restore** — use Cloudflare's D1
+- **Duo** uses the modern Universal Prompt (OIDC) flow only. Duo retired the
+  legacy iframe prompt in 2024; vaultwarden keeps it behind an off-by-default
+  flag, which Vaultur does not carry.
+- **SSO** authenticates the login and then issues Vaultur's own access/refresh
+  tokens (equivalent to vaultwarden's `SSO_AUTH_ONLY_NOT_SESSION=true`); binding
+  session validity to the IdP's refresh tokens is not implemented.
+- **Dependencies** are chosen to match the protocol rather than reinvent it:
+  [`@simplewebauthn/server`](https://simplewebauthn.dev) for FIDO2 (pure
+  WebCrypto), [`jose`](https://github.com/panva/jose) for OIDC id_token
+  verification, and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes)
+  for uncapped PBKDF2. `node:*` built-ins are used everywhere they fit.
+
+## Non-goals
+
+Vaultur targets vaultwarden parity. A few things are deliberately out of scope:
+
+- **Admin-panel DB backup/restore** (`/admin/config/backup_db`) — a SQLite
+  file copy that has no meaning on D1. Use Cloudflare's D1
   [time travel](https://developers.cloudflare.com/d1/reference/time-travel/)
-  or `wrangler d1 export` instead
-
-Contributions that close any of these gaps are welcome — see below.
+  or `wrangler d1 export` instead.
+- **Enterprise machinery that lives only in the proprietary bitwarden/server**
+  and that vaultwarden does not implement either: Secrets Manager, native SCIM
+  (the public directory-connector import covers the same need), passkey _login_
+  as a primary factor (WebAuthn as a second factor is fully supported), Key
+  Connector, and billing/subscriptions.
 
 ## Contributing
 

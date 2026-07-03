@@ -106,6 +106,11 @@ describe("admin API", () => {
 		expect(html).toContain("Email (Cloudflare Email Sending)")
 		expect(html).toContain("Cloudflare Email Sending") // SMTP redesign
 		expect(html).toContain("/admin/users/overview") // nav shown when logged in
+		// Email provider is view-only (locked to Cloudflare Email Sending), not a
+		// misleading disabled <select> that implies other options exist.
+		expect(html).toContain('id="email_provider"')
+		expect(html).toMatch(/<input(?=[^>]*id="email_provider")(?=[^>]*readonly)[^>]*>/)
+		expect(html).not.toContain("Custom SMTP")
 	})
 
 	it("renders the users and organizations overview pages as HTML", async () => {

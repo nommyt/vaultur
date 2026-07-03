@@ -299,12 +299,18 @@ const FieldRow = ({
 const EmailExtras = ({ bindingPresent }: { bindingPresent: boolean }) => (
 	<>
 		<div class="row my-2 align-items-center">
-			<label class="col-sm-4 col-form-label">Email provider</label>
+			<label for="email_provider" class="col-sm-4 col-form-label">
+				Email provider
+			</label>
 			<div class="col-sm-8">
-				<select class="form-select" disabled>
-					<option selected>Cloudflare Email Sending (default)</option>
-					<option>Custom SMTP — not available on Workers</option>
-				</select>
+				<input
+					readonly
+					class="form-control"
+					id="email_provider"
+					type="text"
+					value="Cloudflare Email Sending"
+					spellcheck={false}
+				/>
 			</div>
 		</div>
 		<div class="alert alert-info small mt-2" role="alert">

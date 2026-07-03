@@ -5,7 +5,14 @@
 	"compatibility_date": "2026-07-01",
 	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
-		"enabled": true
+		"enabled": true,
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		},
+		"traces": {
+			"enabled": false
+		}
 	},
 	"workers_dev": true,
 	"preview_urls": false,

@@ -136,6 +136,29 @@ async function confirmedOwnerCount(db: Db, orgUuid: string): Promise<number> {
 	return rows.length
 }
 
+// vaultwarden's FAKE_SSO_IDENTIFIER — a fixed dummy org identifier used when a
+// single SSO integration is assumed. Placeholder value; clients only prefill it.
+const FAKE_SSO_IDENTIFIER = "00000000-01DC-01DC-01DC-000000000000"
+
+// Called (unauthenticated) by 2025.6+ clients on the login page to check for a
+// verified SSO domain. We support a single global SSO integration, so we return
+// one dummy entry regardless of whether SSO is actually enabled — matching
+// vaultwarden. Registered before the `:orgId` routes so "domain" never binds
+// as an org id. Public: see PUBLIC_API_ROUTES in auth/middleware.ts.
+organizationRoutes.post("/organizations/domain/sso/verified", (c) =>
+	c.json({
+		object: "list",
+		data: [
+			{
+				organizationIdentifier: FAKE_SSO_IDENTIFIER,
+				organizationName: FAKE_SSO_IDENTIFIER,
+				domainName: new URL(c.get("config").domain).hostname
+			}
+		],
+		continuationToken: null
+	})
+)
+
 // ---------------------------------------------------------------------------
 // Org CRUD
 // ---------------------------------------------------------------------------
@@ -216,7 +239,7 @@ async function updateOrg(c: Ctx) {
 	const db = c.get("db")
 	await db.update(organizations).set({ name, billingEmail }).where(eq(organizations.uuid, orgId))
 	const { user, device } = auth(c)
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.OrganizationUpdated,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,
@@ -271,7 +294,7 @@ organizationRoutes.post("/organizations/:orgId/leave", async (c) => {
 	}
 
 	await db.delete(usersOrganizations).where(eq(usersOrganizations.uuid, member.uuid))
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.OrganizationUserRemoved,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,
@@ -484,7 +507,7 @@ organizationRoutes.post("/organizations/:orgId/collections", async (c) => {
 			.onConflictDoNothing()
 	}
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.CollectionCreated,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,
@@ -507,7 +530,7 @@ async function bulkDeleteCollections(c: Ctx) {
 		const col = await db.query.collections.findFirst({ where: eq(collections.uuid, id) })
 		if (!col || col.orgUuid !== orgId) continue
 		await db.delete(collections).where(eq(collections.uuid, id))
-		await logOrgEvent(db, {
+		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.CollectionDeleted,
 			orgUuid: orgId,
 			actUserUuid: user.uuid,
@@ -619,7 +642,7 @@ async function updateCollection(c: Ctx) {
 		}
 	}
 
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.CollectionUpdated,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,
@@ -641,7 +664,7 @@ async function deleteCollectionHandler(c: Ctx) {
 	const db = c.get("db")
 
 	await db.delete(collections).where(eq(collections.uuid, col.uuid))
-	await logOrgEvent(db, {
+	await logOrgEvent(db, c.get("config"), {
 		eventType: EventType.CollectionDeleted,
 		orgUuid: orgId,
 		actUserUuid: user.uuid,

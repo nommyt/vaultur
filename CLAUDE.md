@@ -2,7 +2,15 @@
 
 Bitwarden-compatible server on Cloudflare Workers, built as a single Hono
 worker project. `src/` holds the worker; `src/db/` is the Drizzle schema,
-`src/shared/` the protocol enums/constants.
+`src/shared/` the protocol enums/constants. It has full vaultwarden route
+parity, enforced by `test/route-parity.spec.ts` (fires a request at every
+vaultwarden route); config defaults mirror vaultwarden. This includes
+WebAuthn/Duo/YubiKey 2FA (`src/services/{webauthn,duo,yubikey}.ts` via
+`@simplewebauthn/server` and `node:crypto`) and OIDC SSO (`src/services/sso.ts`
+plus the `/identity/connect/*` routes, id_tokens verified with `jose`).
+External-service tests mock at the fetch layer with `fetchMock` from
+`cloudflare:test` — see `test/{sso,yubikey-duo}.spec.ts`. Feature and parity
+notes live in `README.md`.
 
 ## Ground rules
 

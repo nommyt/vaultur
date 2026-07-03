@@ -32,3 +32,5 @@ export type TwoFactor = typeof schema.twofactor.$inferSelect
 export type EmergencyAccess = typeof schema.emergencyAccess.$inferSelect
 export type AuthRequest = typeof schema.authRequests.$inferSelect
 export type EventRow = typeof schema.event.$inferSelect
+export type SsoAuthRow = typeof schema.ssoAuth.$inferSelect
+export type SsoUserRow = typeof schema.ssoUsers.$inferSelect

@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { Hono } from "hono"
 import type { Context } from "hono"
 import { getCookie, setCookie } from "hono/cookie"
@@ -13,6 +13,7 @@ import {
 	invitations,
 	nowDb,
 	organizations,
+	ssoUsers,
 	twofactor,
 	users,
 	usersOrganizations,
@@ -21,14 +22,14 @@ import {
 } from "../db"
 import type { AppEnv } from "../env"
 import { errCode, unauthorized } from "../error"
-import { createMailer } from "../services/mail"
+import { createMailer, mail } from "../services/mail"
 import {
 	getConfigOverrides,
 	saveConfigOverrides,
 	clearConfigOverrides
 } from "../services/server-config"
 import { newUserShell } from "../services/users"
-import { MembershipStatus } from "../shared"
+import { MembershipStatus, MembershipType } from "../shared"
 import { ci, constantTimeEqualStr, normalizeEmail, uuid } from "../util"
 import {
 	renderLogin,
@@ -318,6 +319,102 @@ adminRoutes.post("/users/:uuid/remove-2fa", async (c) => {
 	return c.body(null, 200)
 })
 
+// vaultwarden uses this placeholder id in admin-sent invite links (no real org)
+const FAKE_ADMIN_UUID = "00000000-0000-0000-0000-000000000000"
+
+adminRoutes.post("/users/:uuid/invite/resend", async (c) => {
+	const db = c.get("db")
+	const config = c.get("config")
+	const user = await db.query.users.findFirst({ where: eq(users.uuid, c.req.param("uuid")) })
+	if (!user) return c.json({ message: "User doesn't exist" }, 404)
+	if (user.passwordHash !== "") return c.json({ message: "User already accepted invitation" }, 400)
+
+	const mailer = createMailer(c.env.VAULTUR_EMAIL, config)
+	if (mailer.enabled) {
+		const token = await encodeJwt(
+			c.env.JWT_SECRET,
+			basicClaims({
+				domain: config.domain,
+				kind: "invite",
+				sub: user.uuid,
+				ttlSeconds: 5 * 24 * 3600,
+				extra: { email: user.email, member_id: FAKE_ADMIN_UUID, org_id: FAKE_ADMIN_UUID }
+			})
+		)
+		await mail.orgInvite(
+			mailer,
+			config,
+			user.email,
+			"Vaultur",
+			FAKE_ADMIN_UUID,
+			FAKE_ADMIN_UUID,
+			token,
+			false
+		)
+	}
+	return c.body(null, 200)
+})
+
+adminRoutes.post("/users/org_type", async (c) => {
+	const db = c.get("db")
+	const body = (await c.req.json()) as Record<string, unknown>
+	const userUuid = String(ci(body, "userUuid") ?? body.user_uuid ?? "")
+	const orgUuid = String(ci(body, "orgUuid") ?? body.org_uuid ?? "")
+	const newType = Number(ci(body, "userType") ?? body.user_type ?? Number.NaN)
+
+	const membership = await db.query.usersOrganizations.findFirst({
+		where: and(eq(usersOrganizations.userUuid, userUuid), eq(usersOrganizations.orgUuid, orgUuid))
+	})
+	if (!membership)
+		return c.json({ message: "The specified user isn't member of the organization" }, 400)
+
+	if (
+		!Number.isInteger(newType) ||
+		newType < MembershipType.Owner ||
+		newType > MembershipType.Manager
+	) {
+		return c.json({ message: "Invalid type" }, 400)
+	}
+
+	if (membership.atype === MembershipType.Owner && newType !== MembershipType.Owner) {
+		const owners = await db
+			.select({ n: sql<number>`count(*)` })
+			.from(usersOrganizations)
+			.where(
+				and(
+					eq(usersOrganizations.orgUuid, orgUuid),
+					eq(usersOrganizations.atype, MembershipType.Owner),
+					eq(usersOrganizations.status, MembershipStatus.Confirmed)
+				)
+			)
+		if ((owners[0]?.n ?? 0) <= 1) {
+			return c.json({ message: "Can't change the type of the last owner" }, 400)
+		}
+	}
+
+	await db
+		.update(usersOrganizations)
+		.set({ atype: newType })
+		.where(eq(usersOrganizations.uuid, membership.uuid))
+	return c.body(null, 200)
+})
+
+// Force all clients to resync by bumping every user's revision date
+adminRoutes.post("/users/update_revision", async (c) => {
+	await c.get("db").update(users).set({ updatedAt: nowDb() })
+	return c.body(null, 200)
+})
+
+// Unlink a user's SSO identity so the next SSO login re-associates (or is
+// refused, depending on SSO_SIGNUPS_MATCH_EMAIL)
+adminRoutes.delete("/users/:uuid/sso", async (c) => {
+	await c
+		.get("db")
+		.delete(ssoUsers)
+		.where(eq(ssoUsers.userUuid, c.req.param("uuid")))
+	return c.body(null, 200)
+})
+
 adminRoutes.post("/invite", async (c) => {
 	const db = c.get("db")
 	const config = c.get("config")
@@ -328,9 +425,38 @@ adminRoutes.post("/invite", async (c) => {
 	const existing = await db.query.users.findFirst({ where: eq(users.email, email) })
 	if (existing) return c.json({ message: "User already exists" }, 400)
 
-	// Create a shell user + invitation (admin invites bypass signup restrictions)
-	await db.insert(users).values(newUserShell(email, null))
-	await db.insert(invitations).values({ email }).onConflictDoNothing()
+	// Create the shell account (admin invites bypass signup restrictions), then —
+	// matching vaultwarden's admin invite_user — either email an invite link or,
+	// with mail disabled, record an invitation row the user can register against.
+	// The send is awaited (not fire-and-forget) so a delivery failure surfaces to
+	// the admin as an error instead of a silent success.
+	const shell = newUserShell(email, null)
+	const mailer = createMailer(c.env.VAULTUR_EMAIL, config)
+	if (mailer.enabled) {
+		const token = await encodeJwt(
+			c.env.JWT_SECRET,
+			basicClaims({
+				domain: config.domain,
+				kind: "invite",
+				sub: shell.uuid!,
+				ttlSeconds: 5 * 24 * 3600,
+				extra: { email, member_id: FAKE_ADMIN_UUID, org_id: FAKE_ADMIN_UUID }
+			})
+		)
+		await mail.orgInvite(
+			mailer,
+			config,
+			email,
+			"Vaultur",
+			FAKE_ADMIN_UUID,
+			FAKE_ADMIN_UUID,
+			token,
+			false
+		)
+	} else {
+		await db.insert(invitations).values({ email }).onConflictDoNothing()
+	}
+	await db.insert(users).values(shell)
 	return c.json({ email, object: "invitation" })
 })
 
@@ -395,3 +521,9 @@ async function diagnosticsData(c: Ctx) {
 
 adminRoutes.get("/diagnostics", async (c) => c.html(renderDiagnostics(await diagnosticsData(c))))
 adminRoutes.get("/diagnostics/config", async (c) => c.json(await diagnosticsData(c)))
+// Support-page helper: echo an arbitrary status code (vaultwarden diagnostics_http)
+adminRoutes.get("/diagnostics/http", (c) => {
+	const code = Number.parseInt(c.req.query("code") ?? "200", 10)
+	const status = code >= 100 && code <= 599 ? code : 200
+	return c.json({ message: `Testing error ${status} response` }, status as 400)
+})

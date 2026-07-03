@@ -21,6 +21,7 @@ export type JwtKind =
 	| "file_download"
 	| "register_verify"
 	| "2faremember"
+	| "sso"
 
 export interface LoginJwtClaims extends JWTPayload {
 	nbf: number
