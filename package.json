@@ -47,7 +47,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.71",
-		"@cloudflare/workers-types": "^4.20260701.1",
+		"@cloudflare/workers-types": "^5.20260703.1",
 		"@types/node": "^22.20.0",
 		"drizzle-kit": "^0.31.10",
 		"lefthook": "^2.1.9",
