@@ -11,6 +11,12 @@ export default defineWorkersConfig(async () => {
 			poolOptions: {
 				workers: {
 					singleWorker: true,
+					// HeavyCompute is a stateless DO (no ctx.storage). Per-test isolated
+					// storage adds nothing here, and its SQLite-backed DO snapshot/restore
+					// trips an assertion on the .sqlite-shm WAL file when popping the stack
+					// frame after the suite (vitest-pool-workers isolated-storage known
+					// issue). Disable it — tests share one unisolated storage.
+					isolatedStorage: false,
 					main: "./src/index.ts",
 					miniflare: {
 						compatibilityDate: "2025-09-06",
