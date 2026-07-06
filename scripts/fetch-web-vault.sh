@@ -5,6 +5,11 @@
 #
 # Usage: scripts/fetch-web-vault.sh [version]
 #   version: bw_web_builds release tag (default: latest release)
+#
+# Set GITHUB_TOKEN to authenticate GitHub requests. Shared CI/build fleets
+# (e.g. Cloudflare Workers Builds) commonly exhaust GitHub's 60/hr
+# unauthenticated rate limit or trip its IP-based abuse detection, surfacing
+# as a bare `curl: (22) ... 403`.
 
 set -euo pipefail
 
@@ -13,9 +18,17 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT_DIR/public/web-vault"
 OVERRIDES="$ROOT_DIR/public/overrides"
 
+curl_gh() {
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
+  else
+    curl -fsSL "$@"
+  fi
+}
+
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+  VERSION=$(curl_gh "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
 fi
 if [[ -z "$VERSION" ]]; then
   echo "Could not determine bw_web_builds version" >&2
@@ -26,7 +39,7 @@ echo "Fetching bw_web_builds $VERSION ..."
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-curl -fsSL -o "$TMP/web-vault.tar.gz" \
+curl_gh -o "$TMP/web-vault.tar.gz" \
   "https://github.com/$REPO/releases/download/$VERSION/bw_web_$VERSION.tar.gz"
 
 rm -rf "$DEST"

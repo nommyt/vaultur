@@ -379,6 +379,39 @@ token (Workers Scripts: Edit) and run:
 `JWT_SECRET` (and `ADMIN_TOKEN`) are set once via `wrangler secret put`; they
 persist across deploys and don't need to be passed through CI.
 
+### Cloudflare's native Git integration (Workers Builds)
+
+If you instead connect the repo through the dashboard ("Create Worker" →
+import a Git repository), Cloudflare runs its own **Build command** then
+**Deploy command** — it does not run `pnpm deploy`, and it does not honor a
+`build` field in `wrangler.jsonc`. Auto-detection typically fills the Build
+command with `pnpm run build`, which only runs
+`scripts/ensure-web-vault.sh` (the placeholder safety net, never the real
+fetch) — so the deploy succeeds but serves the placeholder landing page
+instead of the web vault.
+
+Fix it in **Settings → Build** on the Worker:
+
+- **Build command**: `pnpm install && pnpm run web-vault:fetch`
+- **Deploy command**: leave the default `npx wrangler deploy`
+
+Then trigger a new deployment (push a commit, or use "Retry deployment" —
+setting changes only apply to builds from that point onward).
+
+If the Build command then fails with `curl: (22) ... 403` fetching from
+GitHub, Cloudflare's shared build fleet has tripped GitHub's unauthenticated
+rate limit (60 requests/hour per IP) or its IP-based abuse detection — common
+for any CI/build system running from shared egress IPs. Fix: generate a
+GitHub personal access token (no scopes needed for public repos) and add it
+as a **build variable** (Settings → Build → "environment variables and
+secrets accessible only to your build", not the runtime Variables & Secrets
+tab) named `GITHUB_TOKEN`. `fetch-web-vault.sh` picks it up automatically.
+
+Since this path deploys straight from the committed `wrangler.jsonc` (the
+gitignored `wrangler.deploy.jsonc` override never reaches Cloudflare's build
+environment), real D1/KV resource IDs must be edited directly into
+`wrangler.jsonc` for this flow rather than kept in a local-only override.
+
 ---
 
 ## Migrating from vaultwarden
@@ -397,6 +430,7 @@ the schema parity keeps hand-migration straightforward.
 | Symptom                                                                                                            | Cause / fix                                                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `assets.directory ... does not exist` on deploy                                                                    | Run `pnpm web-vault:fetch` (or let `pnpm deploy` write the placeholder).                                                                                                                                                               |
+| Deployed via Cloudflare's dashboard Git integration but only the placeholder page shows                            | Workers Builds' auto-detected Build command runs the placeholder safety net, not the real fetch — see [Continuous deployment](#continuous-deployment-optional) above to set a Build command that runs `pnpm web-vault:fetch`.          |
 | Mobile app can't connect on `*.workers.dev`                                                                        | Use a custom domain (section 7); some clients reject `workers.dev`.                                                                                                                                                                    |
 | No emails arriving                                                                                                 | Check `EMAIL_FROM` is set, the domain is onboarded (`wrangler email sending list`), and the recipient is a verified destination during DKIM propagation.                                                                               |
 | `Invalid claim` / logged out after deploy                                                                          | `JWT_SECRET` changed or isn't set. Set it once as a secret.                                                                                                                                                                            |

@@ -21,7 +21,7 @@
 	"scripts": {
 		"dev": "bash scripts/ensure-web-vault.sh && wrangler dev",
 		"deploy": "bash scripts/ensure-web-vault.sh && sh -c 'wrangler deploy --config \"${WRANGLER_CONFIG:-$( [ -f wrangler.deploy.jsonc ] && echo wrangler.deploy.jsonc || echo wrangler.jsonc )}\"'",
-		"build": "bash scripts/ensure-web-vault.sh && wrangler deploy --dry-run --outdir dist",
+		"build": "pnpm run web-vault:fetch && bash scripts/ensure-web-vault.sh && wrangler deploy --dry-run --outdir dist",
 		"test": "vitest run",
 		"test:heavy": "vitest run --config vitest.heavy.config.ts",
 		"test:freetier": "vitest run --config vitest.freetier.config.ts",
