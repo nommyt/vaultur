@@ -21,12 +21,13 @@ import { publicRoutes } from "./api/public"
 import { sendRoutes, sendAccessRoutes } from "./api/sends"
 import { syncRoutes } from "./api/sync"
 import { twofactorRoutes } from "./api/twofactor"
+import { jwtSecretProblem } from "./auth/secret"
 import { loadConfig } from "./config"
 import { applyOverrides } from "./config-schema"
 import { pbkdf2Als } from "./crypto"
 import { createDb } from "./db"
 import type { AppEnv } from "./env"
-import { onError, errorBody } from "./error"
+import { onError, errorBody, errCode } from "./error"
 import { heavyRunner } from "./services/pbkdf2-offload"
 import { getConfigOverrides } from "./services/server-config"
 
@@ -34,6 +35,14 @@ export function createApp() {
 	const app = new Hono<AppEnv>()
 
 	app.use(async (c, next) => {
+		const secretProblem = jwtSecretProblem(c.env.JWT_SECRET)
+		if (secretProblem) {
+			console.error(
+				`Refusing request: ${secretProblem}. Set a strong JWT_SECRET, e.g. \`openssl rand -base64 64\`.`
+			)
+			errCode("Server configuration error", 500)
+		}
+
 		const db = createDb(c.env.VAULTUR_DB)
 		c.set("db", db)
 		const base = loadConfig(c.env, c.req.url)
