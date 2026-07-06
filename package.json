@@ -20,7 +20,7 @@
 	"packageManager": "pnpm@11.9.0",
 	"scripts": {
 		"dev": "bash scripts/ensure-web-vault.sh && wrangler dev",
-		"deploy": "bash scripts/ensure-web-vault.sh && sh -c 'CFG=\"${WRANGLER_CONFIG:-$( [ -f wrangler.deploy.jsonc ] && echo wrangler.deploy.jsonc || echo wrangler.jsonc )}\"; wrangler deploy --config \"$CFG\" && pnpm run db:migrate:remote'",
+		"deploy": "bash scripts/ensure-web-vault.sh && sh -c 'CFG=\"$(bash scripts/resolve-wrangler-config.sh)\"; wrangler deploy --config \"$CFG\" && wrangler d1 migrations apply vaultur --remote --config \"$CFG\"'",
 		"build": "pnpm run web-vault:fetch && bash scripts/ensure-web-vault.sh && wrangler deploy --dry-run --outdir dist",
 		"test": "vitest run",
 		"test:heavy": "vitest run --config vitest.heavy.config.ts",
@@ -30,7 +30,7 @@
 		"cf-typegen": "wrangler types",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate:local": "wrangler d1 migrations apply vaultur --local",
-		"db:migrate:remote": "sh -c 'wrangler d1 migrations apply vaultur --remote --config \"${WRANGLER_CONFIG:-$( [ -f wrangler.deploy.jsonc ] && echo wrangler.deploy.jsonc || echo wrangler.jsonc )}\"'",
+		"db:migrate:remote": "sh -c 'wrangler d1 migrations apply vaultur --remote --config \"$(bash scripts/resolve-wrangler-config.sh)\"'",
 		"web-vault:fetch": "bash scripts/fetch-web-vault.sh",
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check ."

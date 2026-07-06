@@ -387,18 +387,18 @@ If you instead connect the repo through the dashboard ("Create Worker" →
 import a Git repository), Cloudflare runs its own **Build command** then
 **Deploy command** — it does not run `pnpm deploy`, and it does not honor a
 `build` field in `wrangler.jsonc`. Auto-detection typically fills the Build
-command with `pnpm run build`, which only runs
-`scripts/ensure-web-vault.sh` (the placeholder safety net, never the real
-fetch) — so the deploy succeeds but serves the placeholder landing page
-instead of the web vault.
+command with `pnpm run build`, which does fetch the real web vault but also
+runs a needless `wrangler deploy --dry-run` (that's there for local/CI
+verification, not this flow) and skips `pnpm install`. More importantly, the
+auto-detected **Deploy command** is a bare `wrangler deploy` (not `pnpm
+deploy`), which skips D1 migrations entirely — that logic lives in the
+`deploy` script, not in Wrangler or `wrangler.jsonc`.
 
 Fix it in **Settings → Build** on the Worker:
 
 - **Build command**: `pnpm install && pnpm run web-vault:fetch`
 - **Deploy command**: `pnpm deploy` — applies pending D1 migrations, then
-  runs `wrangler deploy`. The default `npx wrangler deploy` skips migrations
-  entirely, since that logic lives in the `deploy` script, not in Wrangler
-  or `wrangler.jsonc`.
+  runs `wrangler deploy`.
 
 Then trigger a new deployment (push a commit, or use "Retry deployment" —
 setting changes only apply to builds from that point onward).
@@ -443,7 +443,7 @@ the schema parity keeps hand-migration straightforward.
 | Symptom                                                                                                            | Cause / fix                                                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `assets.directory ... does not exist` on deploy                                                                    | Run `pnpm web-vault:fetch` (or let `pnpm deploy` write the placeholder).                                                                                                                                                               |
-| Deployed via Cloudflare's dashboard Git integration but only the placeholder page shows                            | Workers Builds' auto-detected Build command runs the placeholder safety net, not the real fetch — see [Continuous deployment](#continuous-deployment-optional) above to set a Build command that runs `pnpm web-vault:fetch`.          |
+| Deployed via Cloudflare's dashboard Git integration but only the placeholder page shows                            | The web vault was never fetched into `public/web-vault` before this build — see [Continuous deployment](#continuous-deployment-optional) above to set an explicit Build command that runs `pnpm web-vault:fetch`.                      |
 | Workers Builds deploy fails on `wrangler d1 migrations apply` with an authorization error                          | The project's auto-generated API token (Settings → Build) lacks D1 Edit permission — edit or replace it. See [Continuous deployment](#continuous-deployment-optional).                                                                 |
 | Mobile app can't connect on `*.workers.dev`                                                                        | Use a custom domain (section 7); some clients reject `workers.dev`.                                                                                                                                                                    |
 | No emails arriving                                                                                                 | Check `EMAIL_FROM` is set, the domain is onboarded (`wrangler email sending list`), and the recipient is a verified destination during DKIM propagation.                                                                               |

@@ -213,6 +213,34 @@ cap). For R2 storage (500 MB/file, needs a paid Cloudflare plan), email
 sending, a custom domain, mobile push, and the full configuration reference,
 see **[docs/deployment.md](docs/deployment.md)**.
 
+### Deploy via Cloudflare Dashboard (Git integration)
+
+Prefer not to touch the CLI? Cloudflare can build and deploy straight from
+this repo: **"Create Worker" → import a Git repository**, point it at your
+fork, and override the auto-detected commands — the auto-detected Deploy
+command is a bare `wrangler deploy`, which silently skips D1 migrations:
+
+- **Build command**: `pnpm install && pnpm run web-vault:fetch`
+- **Deploy command**: `pnpm deploy`
+
+Two things the free tier needs added before the first deploy succeeds:
+
+- **`GITHUB_TOKEN`** — add as a **Build variable** (Settings → Build →
+  environment variables/secrets for your build, _not_ the runtime tab). A
+  GitHub personal access token (no scopes needed for a public repo) — without
+  it, Cloudflare's shared build fleet trips GitHub's 60 requests/hour
+  unauthenticated rate limit fetching the web vault release, failing the
+  build with `curl: (22) ... 403`.
+- **`JWT_SECRET`** — add as a runtime secret (Settings → Variables & Secrets).
+  Every auth token is signed with it; Vaultur refuses all requests (500)
+  without one.
+
+The auto-generated API token this flow provisions also needs **D1 Edit**
+permission for the migration step, and since this path never sees the
+gitignored `wrangler.deploy.jsonc`, real D1/KV/R2 resource IDs go directly
+into the committed `wrangler.jsonc`. Full detail and troubleshooting:
+**[docs/deployment.md](docs/deployment.md#cloudflares-native-git-integration-workers-builds)**.
+
 ### Storage: KV vs R2
 
 File storage picks its backend automatically from `wrangler.jsonc`: if the
