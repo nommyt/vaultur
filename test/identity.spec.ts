@@ -1,7 +1,7 @@
 import { SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
 
-import { TEST_USER, login, registerUser } from "./helpers"
+import { api, registerAndLogin, TEST_USER, login, registerUser } from "./helpers"
 
 describe("identity", () => {
 	it("GET /api/config returns server metadata", async () => {
@@ -52,6 +52,44 @@ describe("identity", () => {
 		expect(body.PrivateKey).toBe(TEST_USER.keys.encryptedPrivateKey)
 		expect(body.Kdf).toBe(0)
 		expect(body.KdfIterations).toBe(600_000)
+		expect(body.UserDecryptionOptions.HasMasterPassword).toBe(true)
+		expect(body.UserDecryptionOptions.MasterPasswordUnlock.Salt).toBe(TEST_USER.email)
+	})
+
+	it("personal API key (client_credentials) login includes decryption options", async () => {
+		const { access_token: token } = await registerAndLogin()
+		const profile = (await (await api(token, "GET", "/api/accounts/profile")).json()) as Record<
+			string,
+			any
+		>
+
+		const keyRes = await api(token, "POST", "/api/accounts/api-key", {
+			masterPasswordHash: TEST_USER.masterPasswordHash
+		})
+		expect(keyRes.status).toBe(200)
+		const { apiKey } = (await keyRes.json()) as { apiKey: string }
+
+		const form = new URLSearchParams({
+			grant_type: "client_credentials",
+			scope: "api",
+			client_id: `user.${profile.id}`,
+			client_secret: apiKey,
+			deviceType: "9",
+			deviceIdentifier: "cli-device",
+			deviceName: "cli"
+		})
+		const res = await SELF.fetch("https://vault.test/identity/connect/token", {
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: form.toString()
+		})
+		expect(res.status).toBe(200)
+		const body = (await res.json()) as Record<string, any>
+		expect(body.access_token).toBeTruthy()
+		expect(body.Key).toBe(TEST_USER.key)
+		expect(body.AccountKeys.publicKeyEncryptionKeyPair.wrappedPrivateKey).toBe(
+			TEST_USER.keys.encryptedPrivateKey
+		)
 		expect(body.UserDecryptionOptions.HasMasterPassword).toBe(true)
 		expect(body.UserDecryptionOptions.MasterPasswordUnlock.Salt).toBe(TEST_USER.email)
 	})

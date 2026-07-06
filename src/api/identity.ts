@@ -496,15 +496,21 @@ async function ssoLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip: s
 	return c.json(await authenticatedResponse(db, user, tokens, twofactorToken))
 }
 
-async function authenticatedResponse(
-	db: Db,
-	user: User,
-	tokens: { accessToken: string; refreshToken: string; expiresIn: number; scope: string },
-	twofactorToken: string | null
-) {
-	const policy = await masterPasswordPolicy(db, user.uuid)
-	const hasMasterPassword = user.passwordHash !== ""
+function buildAccountKeys(user: User) {
+	return user.privateKey
+		? {
+				publicKeyEncryptionKeyPair: {
+					wrappedPrivateKey: user.privateKey,
+					publicKey: user.publicKey,
+					Object: "publicKeyEncryptionKeyPair"
+				},
+				Object: "privateKeys"
+			}
+		: null
+}
 
+function buildUserDecryptionOptions(user: User) {
+	const hasMasterPassword = user.passwordHash !== ""
 	const masterPasswordUnlock = hasMasterPassword
 		? {
 				Kdf: {
@@ -519,16 +525,20 @@ async function authenticatedResponse(
 			}
 		: null
 
-	const accountKeys = user.privateKey
-		? {
-				publicKeyEncryptionKeyPair: {
-					wrappedPrivateKey: user.privateKey,
-					publicKey: user.publicKey,
-					Object: "publicKeyEncryptionKeyPair"
-				},
-				Object: "privateKeys"
-			}
-		: null
+	return {
+		HasMasterPassword: hasMasterPassword,
+		MasterPasswordUnlock: masterPasswordUnlock,
+		Object: "userDecryptionOptions"
+	}
+}
+
+async function authenticatedResponse(
+	db: Db,
+	user: User,
+	tokens: { accessToken: string; refreshToken: string; expiresIn: number; scope: string },
+	twofactorToken: string | null
+) {
+	const policy = await masterPasswordPolicy(db, user.uuid)
 
 	const result: Record<string, unknown> = {
 		access_token: tokens.accessToken,
@@ -544,12 +554,8 @@ async function authenticatedResponse(
 		ForcePasswordReset: false,
 		MasterPasswordPolicy: policy,
 		scope: tokens.scope,
-		AccountKeys: accountKeys,
-		UserDecryptionOptions: {
-			HasMasterPassword: hasMasterPassword,
-			MasterPasswordUnlock: masterPasswordUnlock,
-			Object: "userDecryptionOptions"
-		}
+		AccountKeys: buildAccountKeys(user),
+		UserDecryptionOptions: buildUserDecryptionOptions(user)
 	}
 	if (user.akey !== "") result.Key = user.akey
 	if (twofactorToken) result.TwoFactorToken = twofactorToken
@@ -628,7 +634,9 @@ async function apiKeyLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip
 		KdfParallelism: user.clientKdfParallelism,
 		ResetMasterPassword: false,
 		ForcePasswordReset: false,
-		scope: tokens.scope
+		scope: tokens.scope,
+		AccountKeys: buildAccountKeys(user),
+		UserDecryptionOptions: buildUserDecryptionOptions(user)
 	})
 }
 
