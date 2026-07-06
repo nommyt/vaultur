@@ -20,7 +20,7 @@
 	"packageManager": "pnpm@11.9.0",
 	"scripts": {
 		"dev": "bash scripts/ensure-web-vault.sh && wrangler dev",
-		"deploy": "bash scripts/ensure-web-vault.sh && sh -c 'CFG=\"${WRANGLER_CONFIG:-$( [ -f wrangler.deploy.jsonc ] && echo wrangler.deploy.jsonc || echo wrangler.jsonc )}\"; pnpm run db:migrate:remote && wrangler deploy --config \"$CFG\"'",
+		"deploy": "bash scripts/ensure-web-vault.sh && sh -c 'CFG=\"${WRANGLER_CONFIG:-$( [ -f wrangler.deploy.jsonc ] && echo wrangler.deploy.jsonc || echo wrangler.jsonc )}\"; wrangler deploy --config \"$CFG\" && pnpm run db:migrate:remote'",
 		"build": "pnpm run web-vault:fetch && bash scripts/ensure-web-vault.sh && wrangler deploy --dry-run --outdir dist",
 		"test": "vitest run",
 		"test:heavy": "vitest run --config vitest.heavy.config.ts",

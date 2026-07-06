@@ -57,27 +57,27 @@
 			{
 				"name": "VAULTUR_NOTIFICATIONS",
 				"class_name": "NotificationsHub"
+			},
+			{
+				// Omit this binding to run PBKDF2 inline (recommended for paid).
+				// Set it to offload to a Durable Object for free-tier CPU budget.
+				"name": "VAULTUR_HEAVY",
+				"class_name": "HeavyCompute"
 			}
-			// {
-			// 	// Omit this binding to run PBKDF2 inline (recommended for paid).
-			// 	// Set it to offload to a Durable Object for free-tier CPU budget.
-			// 	"name": "VAULTUR_HEAVY",
-			// 	"class_name": "HeavyCompute"
-			// }
 		]
 	},
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["NotificationsHub"]
+		},
+		{
+			"tag": "v2",
+			// Free-plan Durable Object namespaces require the SQLite storage
+			// backend (Cloudflare error 10097 on `new_classes`); HeavyCompute is
+			// stateless (no ctx.storage use) so this has no code-level effect.
+			"new_sqlite_classes": ["HeavyCompute"]
 		}
-		// {
-		// 	"tag": "v2",
-		// 	// Free-plan Durable Object namespaces require the SQLite storage
-		// 	// backend (Cloudflare error 10097 on `new_classes`); HeavyCompute is
-		// 	// stateless (no ctx.storage use) so this has no code-level effect.
-		// 	"new_sqlite_classes": ["HeavyCompute"]
-		// }
 	],
 	// ---------------------------------------------------------------------
 	// Cloudflare Email Sending binding (first-class transactional email).
