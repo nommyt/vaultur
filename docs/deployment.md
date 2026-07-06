@@ -152,12 +152,17 @@ again). It never touches vault data.
 
 ## 4. Apply database migrations
 
+`pnpm deploy` ([§6](#6-deploy)) applies any pending migrations before
+deploying — idempotent, so this is usually automatic and this section can be
+skipped. To apply migrations without a full deploy:
+
 ```bash
 pnpm db:migrate:remote      # wrangler d1 migrations apply vaultur --remote
 ```
 
 Schema changes: edit `src/db/schema.ts`, run `pnpm db:generate` (drizzle-kit
-writes a new file under `migrations/`), then apply. Never hand-edit generated SQL.
+writes a new file under `migrations/`), then deploy (or apply directly).
+Never hand-edit generated SQL.
 
 ---
 
@@ -393,10 +398,21 @@ instead of the web vault.
 Fix it in **Settings → Build** on the Worker:
 
 - **Build command**: `pnpm install && pnpm run web-vault:fetch`
-- **Deploy command**: leave the default `npx wrangler deploy`
+- **Deploy command**: `pnpm deploy` — applies pending D1 migrations, then
+  runs `wrangler deploy`. The default `npx wrangler deploy` skips migrations
+  entirely, since that logic lives in the `deploy` script, not in Wrangler
+  or `wrangler.jsonc`.
 
 Then trigger a new deployment (push a commit, or use "Retry deployment" —
 setting changes only apply to builds from that point onward).
+
+The auto-generated **API token** shown on this page (Cloudflare provisions
+one automatically per project) needs D1 edit permission for the migration
+step to succeed — it's undocumented whether the default scope includes this.
+If the Deploy command fails on the `wrangler d1 migrations apply` step with
+an authorization error, edit that API token (or supply your own via "select
+one that you already own") and ensure it includes D1 Edit, not just Workers
+Scripts Edit.
 
 If the Build command then fails with `curl: (22) ... 403` fetching from
 GitHub, Cloudflare's shared build fleet has tripped GitHub's unauthenticated
@@ -431,6 +447,7 @@ the schema parity keeps hand-migration straightforward.
 | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `assets.directory ... does not exist` on deploy                                                                    | Run `pnpm web-vault:fetch` (or let `pnpm deploy` write the placeholder).                                                                                                                                                               |
 | Deployed via Cloudflare's dashboard Git integration but only the placeholder page shows                            | Workers Builds' auto-detected Build command runs the placeholder safety net, not the real fetch — see [Continuous deployment](#continuous-deployment-optional) above to set a Build command that runs `pnpm web-vault:fetch`.          |
+| Workers Builds deploy fails on `wrangler d1 migrations apply` with an authorization error                          | The project's auto-generated API token (Settings → Build) lacks D1 Edit permission — edit or replace it. See [Continuous deployment](#continuous-deployment-optional).                                                                 |
 | Mobile app can't connect on `*.workers.dev`                                                                        | Use a custom domain (section 7); some clients reject `workers.dev`.                                                                                                                                                                    |
 | No emails arriving                                                                                                 | Check `EMAIL_FROM` is set, the domain is onboarded (`wrangler email sending list`), and the recipient is a verified destination during DKIM propagation.                                                                               |
 | `Invalid claim` / logged out after deploy                                                                          | `JWT_SECRET` changed or isn't set. Set it once as a secret.                                                                                                                                                                            |
