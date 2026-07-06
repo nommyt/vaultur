@@ -39,22 +39,38 @@ export function createApp() {
 	// are explicitly disabled so the browser-extension client's cross-origin API
 	// fetches and the SSO popup flow keep working. The web vault SPA is served by
 	// the native `assets` runtime, not this app, so it is unaffected either way.
-	app.use(
-		secureHeaders({
-			crossOriginEmbedderPolicy: false,
-			crossOriginResourcePolicy: false,
-			crossOriginOpenerPolicy: false,
-			originAgentCluster: false,
-			// Plain max-age (no includeSubDomains) — safer for self-hosters whose
-			// apex/sibling subdomains are not all HTTPS.
-			strictTransportSecurity: "max-age=31536000",
-			referrerPolicy: "no-referrer",
-			xContentTypeOptions: "nosniff",
-			// X-Frame-Options is decided by the dedicated middleware below, not here —
-			// see its comment for why (Hono's LIFO middleware unwind).
-			xFrameOptions: false
-		})
-	)
+	const applySecureHeaders = secureHeaders({
+		crossOriginEmbedderPolicy: false,
+		crossOriginResourcePolicy: false,
+		crossOriginOpenerPolicy: false,
+		originAgentCluster: false,
+		// Plain max-age (no includeSubDomains) — safer for self-hosters whose
+		// apex/sibling subdomains are not all HTTPS.
+		strictTransportSecurity: "max-age=31536000",
+		referrerPolicy: "no-referrer",
+		xContentTypeOptions: "nosniff",
+		// X-Frame-Options is decided by the dedicated middleware below, not here —
+		// see its comment for why (Hono's LIFO middleware unwind).
+		xFrameOptions: false
+	})
+
+	// The /notifications/hub and /notifications/anonymous-hub routes proxy to a
+	// Durable Object that upgrades to a WebSocket (see src/durable/notifications-hub.ts),
+	// returning `new Response(null, { status: 101, webSocket })`. Once a Response
+	// carries a webSocket, its headers are immutable at runtime — any `.headers.set(...)`
+	// on it throws `TypeError: Can't modify immutable headers`, which crashed every
+	// live-sync connection in production. Both header-setting middlewares below
+	// check the same `Upgrade: websocket` request header the notification routes
+	// themselves check (src/api/notifications.ts) to skip entirely for these
+	// requests, rather than trying to inspect the response after the fact.
+	function isWebSocketUpgrade(headerValue: string | undefined): boolean {
+		return (headerValue ?? "").toLowerCase() === "websocket"
+	}
+
+	app.use(async (c, next) => {
+		if (isWebSocketUpgrade(c.req.header("Upgrade"))) return next()
+		return applySecureHeaders(c, next)
+	})
 
 	// X-Frame-Options / frame-ancestors decided once, by path, in one place. Hono
 	// middleware unwinds LIFO (post-next() code of the FIRST-registered middleware
@@ -64,6 +80,7 @@ export function createApp() {
 	// one middleware ever sets this header, decided by path.
 	app.use(async (c, next) => {
 		await next()
+		if (isWebSocketUpgrade(c.req.header("Upgrade"))) return
 		const pathname = new URL(c.req.url).pathname
 		const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/")
 		c.res.headers.set("X-Frame-Options", isAdmin ? "DENY" : "SAMEORIGIN")
