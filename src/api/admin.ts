@@ -23,6 +23,7 @@ import {
 import type { AppEnv } from "../env"
 import { errCode, unauthorized } from "../error"
 import { createMailer, mail } from "../services/mail"
+import { checkAdminLoginRateLimit } from "../services/ratelimit"
 import {
 	getConfigOverrides,
 	saveConfigOverrides,
@@ -50,6 +51,11 @@ import {
 export const adminRoutes = new Hono<AppEnv>()
 
 type Ctx = Context<AppEnv>
+
+/** True when ADMIN_TOKEN is set but short enough to be brute-forceable. */
+function adminTokenWeak(token: string | undefined): boolean {
+	return Boolean(token && token.length < 20)
+}
 
 const ADMIN_COOKIE = "VAULTUR_ADMIN"
 
@@ -82,6 +88,7 @@ async function isAdminAuthed(c: Ctx): Promise<boolean> {
 // back to /admin) or a JSON body (returns {ok:true}); registered for both '/'
 // and '' so it matches /admin and /admin/.
 async function adminLogin(c: Ctx) {
+	await checkAdminLoginRateLimit(c.env.VAULTUR_KV, c.get("config"), c.get("ip"))
 	const isJson = (c.req.header("Content-Type") ?? "").includes("application/json")
 	let token = ""
 	if (isJson) {
@@ -132,7 +139,7 @@ async function adminIndex(c: Ctx) {
 			cfg,
 			overridden,
 			bindingPresent: Boolean(c.env.VAULTUR_EMAIL),
-			adminTokenInsecure: false
+			adminTokenInsecure: adminTokenWeak(c.env.ADMIN_TOKEN)
 		})
 	)
 }
@@ -149,6 +156,7 @@ adminRoutes.use("*", async (c, next) => {
 		await next()
 		return
 	}
+	await checkAdminLoginRateLimit(c.env.VAULTUR_KV, c.get("config"), c.get("ip"))
 	unauthorized("Admin authentication required")
 })
 

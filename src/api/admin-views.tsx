@@ -348,10 +348,17 @@ export function renderSettings(props: {
 	bindingPresent: boolean
 	adminTokenInsecure: boolean
 }): string {
-	const { cfg, overridden, bindingPresent } = props
+	const { cfg, overridden, bindingPresent, adminTokenInsecure } = props
 	return doc(
 		<Layout page="settings" loggedIn={true}>
 			<main class="container-xxl">
+				{adminTokenInsecure ? (
+					<div class="alert alert-warning" role="alert">
+						<span class="fw-bold">Weak admin token.</span> Your ADMIN_TOKEN is short and may be
+						brute-forceable. Use a long random value (e.g. <code>openssl rand -base64 48</code>) set
+						via Cloudflare secrets.
+					</div>
+				) : null}
 				<div id="config-block" class="align-items-center p-3 mb-3 bg-secondary rounded shadow">
 					<h6 class="text-white mb-3">Configuration</h6>
 					<div class="small text-white mb-3">
