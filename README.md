@@ -145,7 +145,10 @@ The admin panel is a Hono-JSX port of vaultwarden's (`/admin`, gated on the
 `ADMIN_TOKEN` secret — the whole surface 404s until it's set). It's
 vaultwarden-parity first: user and organization management, diagnostics, and a
 live-editable settings page whose values are persisted in D1 and layered over
-the env config, so you can change settings without redeploying.
+the env config, so you can change settings without redeploying. Admin login
+attempts are rate-limited per IP, and the Settings page warns if `ADMIN_TOKEN`
+is short enough to be brute-forceable — use a long random value (e.g.
+`openssl rand -base64 48`).
 
 On top of vaultwarden's settings it adds the Cloudflare- and Vaultur-specific
 bits: the Cloudflare Email Sending transport (Vaultur's mail path, in place of
@@ -173,12 +176,23 @@ inline (recommended on paid plans).
 
 ```bash
 pnpm install
-cp .dev.vars.example .dev.vars     # set JWT_SECRET
+cp .env.example .env
+perl -i -pe 's#^JWT_SECRET=.*#JWT_SECRET="'"$(openssl rand -base64 64 | tr -d '\n')"'"#' .env
 pnpm db:migrate:local && pnpm dev  # http://localhost:8787
 ```
 
 Point any Bitwarden client (extension, mobile, desktop, CLI) at
-`http://localhost:8787` as a self-hosted server to try it locally.
+`http://localhost:8787` as a self-hosted server to try it locally. Vaultur
+refuses to serve requests (500, logged) if `JWT_SECRET` is missing, too short,
+or still the `.env.example` placeholder — every auth token is signed with it,
+so there's no safe way to run without a real one.
+
+To also try the [admin panel](#admin-panel) locally (optional — the surface
+404s until `ADMIN_TOKEN` is set):
+
+```bash
+perl -i -pe 's#^ADMIN_TOKEN=.*#ADMIN_TOKEN="'"$(openssl rand -base64 48 | tr -d '\n')"'"#' .env
+```
 
 ### Deploy your own
 

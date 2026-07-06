@@ -17,7 +17,7 @@ list envelopes).
 ```bash
 pnpm install
 pnpm exec lefthook install         # activates local git hooks (see below)
-cp .dev.vars.example .dev.vars     # set JWT_SECRET
+cp .env.example .env               # set JWT_SECRET
 pnpm db:migrate:local && pnpm dev  # http://localhost:8787
 ```
 

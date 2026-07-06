@@ -307,7 +307,7 @@ panel (or `POST /admin/config/delete`) to fall back to the env value again.
 ## Local development
 
 ```bash
-cp .dev.vars.example .dev.vars     # set JWT_SECRET (and ADMIN_TOKEN if wanted)
+cp .env.example .env               # set JWT_SECRET (and ADMIN_TOKEN if wanted)
 pnpm db:migrate:local              # apply migrations to the local D1
 pnpm dev                           # wrangler dev on http://localhost:8787
 ```

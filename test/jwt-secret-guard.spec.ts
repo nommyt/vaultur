@@ -13,7 +13,7 @@ describe("jwtSecretProblem", () => {
 	})
 
 	it("rejects the shipped placeholder even though it is long enough", () => {
-		// .dev.vars.example value — 35 chars, so length alone would not catch it.
+		// .env.example value — 35 chars, so length alone would not catch it.
 		expect(jwtSecretProblem("change-me-to-64-random-bytes-base64")).toBeTruthy()
 	})
 

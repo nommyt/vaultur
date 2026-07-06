@@ -100,7 +100,7 @@ are oblivious. Omit the binding to run inline (recommended for paid plans).
   `VAULTUR_HEAVY` binding; not included in `pnpm test` due to storage
   isolation limitations)
 - `pnpm format` / `pnpm format:check` — oxfmt write / check
-- `pnpm dev` — wrangler dev (needs `.dev.vars`, see `.dev.vars.example`)
+- `pnpm dev` — wrangler dev (needs `.env`, see `.env.example`)
 - `pnpm deploy` — wrangler deploy
 
 Local git hooks (`lefthook`) enforce checks: pre-commit runs

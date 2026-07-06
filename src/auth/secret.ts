@@ -12,7 +12,7 @@
 
 const MIN_SECRET_LENGTH = 32
 
-// Placeholder markers that must never reach production. .dev.vars.example ships
+// Placeholder markers that must never reach production. .env.example ships
 // JWT_SECRET="change-me-to-64-random-bytes-base64"; refuse anything still
 // carrying a "change me" marker regardless of length.
 const PLACEHOLDER_MARKERS = ["change-me", "changeme", "change me", "your-secret", "replace-me"]
