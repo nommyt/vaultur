@@ -164,15 +164,15 @@ Bitwarden clients derive a master-password hash, then the server hashes it
 again with PBKDF2 before storing it. workerd caps native PBKDF2 (both WebCrypto
 and `node:crypto`) at 100k iterations in production
 ([workerd#1346](https://github.com/cloudflare/workerd/issues/1346)), which is
-well below vaultwarden's 600k default. Vaultur runs PBKDF2 through
+well below vaultwarden's 600k default, and pure-JS hashing is CPU-heavy. So
+Vaultur does not hash in the request Worker at all: the PBKDF2 derivation runs
+in the `HeavyCompute` Durable Object (`VAULTUR_HEAVY` binding) via
 [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (pure JS, no cap),
-so the real iteration count is honored. SHA-256 and HMAC still use `node:crypto`
-(no cap there).
+which has a 30s CPU budget — free-tier friendly and transparent to callers.
+SHA-256 and HMAC still use `node:crypto` (no cap there).
 
-Pure-JS hashing costs CPU. On the free tier (10ms CPU/request) you can offload
-it: set the `VAULTUR_HEAVY` Durable Object binding and the derivation runs in a
-DO with a 30s CPU budget, transparently to callers. Omit the binding to run
-inline (recommended on paid plans).
+The `VAULTUR_HEAVY` binding is **required** — the committed `wrangler.jsonc`
+already declares it, and the Worker returns a 500 if it is missing.
 
 ## Quick start
 

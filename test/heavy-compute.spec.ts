@@ -1,10 +1,9 @@
 import { env } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
 
-import { pbkdf2 } from "../src/crypto"
 import type { Bindings } from "../src/env"
 import type { Pbkdf2OffloadRequest, Pbkdf2OffloadResponse } from "../src/services/pbkdf2-offload"
-import { b64Encode } from "../src/util"
+import { b64Decode, b64Encode } from "../src/util"
 
 const TEST_PASSWORD = "password"
 const TEST_SALT = "salt"
@@ -37,14 +36,11 @@ describe("HeavyCompute Durable Object", () => {
 		const data = (await res.json()) as Pbkdf2OffloadResponse
 		expect(data.digest).toBeTruthy()
 
-		const inlineDigest = await pbkdf2(
-			new TextEncoder().encode(TEST_PASSWORD),
-			new TextEncoder().encode(TEST_SALT),
-			TEST_ITERATIONS,
-			TEST_DKLEN
-		)
-		const inlineB64 = b64Encode(inlineDigest)
-		expect(data.digest).toBe(inlineB64)
+		// PBKDF2-HMAC-SHA256("password", "salt", 4096, 32) — canonical vector.
+		const digestHex = Array.from(b64Decode(data.digest))
+			.map((b) => b.toString(16).padStart(2, "0"))
+			.join("")
+		expect(digestHex).toBe("c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a")
 	})
 
 	it("rejects non-POST requests", async () => {

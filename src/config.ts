@@ -89,7 +89,8 @@ export function loadConfig(env: Bindings, requestUrl: string): Config {
 		passwordHintsAllow: bool(env.PASSWORD_HINTS_ALLOW, true),
 		showPasswordHint: bool(env.SHOW_PASSWORD_HINT, false),
 		// Server-side PBKDF2 over the client's already-derived master-password hash.
-		// Uses @noble/hashes (pure JS) to avoid workerd's 100k cap on native crypto —
+		// Offloaded to the HeavyCompute Durable Object (pure-JS @noble/hashes, no cap)
+		// to avoid workerd's 100k cap on native crypto —
 		// matches vaultwarden's 600k default and allows up to 2M (Bitwarden KDF ceiling).
 		passwordIterations: clamp(int(env.PASSWORD_ITERATIONS, 600_000), 1, 2_000_000),
 		emailFrom,

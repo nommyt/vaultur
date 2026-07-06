@@ -104,8 +104,16 @@ export function createApp() {
 		c.set("config", applyOverrides(base, overrides))
 		c.set("storage", getBlobStore(c.env))
 		c.set("ip", c.req.header("CF-Connecting-IP") ?? "0.0.0.0")
-		const runner = c.env.VAULTUR_HEAVY ? heavyRunner(c.env.VAULTUR_HEAVY) : undefined
-		return pbkdf2Als.run(runner, () => next())
+		// Server-side PBKDF2 runs exclusively in the HeavyCompute Durable Object;
+		// the Worker never derives inline. The binding is required — fail fast with
+		// a clear message if a deployment omits it (mirrors the JWT_SECRET guard).
+		if (!c.env.VAULTUR_HEAVY) {
+			console.error(
+				"Refusing request: VAULTUR_HEAVY Durable Object binding is not configured. Bind HeavyCompute in your wrangler config — see docs/deployment.md."
+			)
+			errCode("Server configuration error", 500)
+		}
+		return pbkdf2Als.run(heavyRunner(c.env.VAULTUR_HEAVY), () => next())
 	})
 
 	app.onError(onError)

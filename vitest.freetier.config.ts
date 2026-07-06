@@ -22,7 +22,10 @@ export default defineWorkersConfig(async () => {
 						compatibilityFlags: ["nodejs_compat"],
 						d1Databases: ["VAULTUR_DB"],
 						kvNamespaces: ["VAULTUR_KV"],
-						durableObjects: { VAULTUR_NOTIFICATIONS: "NotificationsHub" },
+						durableObjects: {
+							VAULTUR_NOTIFICATIONS: "NotificationsHub",
+							VAULTUR_HEAVY: "HeavyCompute"
+						},
 						bindings: {
 							TEST_MIGRATIONS: migrations,
 							JWT_SECRET: "vaultur-test-jwt-secret-vaultur-test-jwt-secret",

@@ -59,8 +59,8 @@
 				"class_name": "NotificationsHub"
 			},
 			{
-				// Omit this binding to run PBKDF2 inline (recommended for paid).
-				// Set it to offload to a Durable Object for free-tier CPU budget.
+				// Required: all server-side PBKDF2 is offloaded to this DO (the
+				// Worker never derives inline). Keep this binding enabled.
 				"name": "VAULTUR_HEAVY",
 				"class_name": "HeavyCompute"
 			}

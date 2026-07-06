@@ -81,15 +81,16 @@ latter.
 
 Workerd's native crypto (both WebCrypto and `node:crypto`) caps PBKDF2
 iterations at 100k in production (cloudflare/workerd#1346). Vaultur uses
-`@noble/hashes` (pure JS, no cap) for `pbkdf2()` / `hashPassword()` /
-`verifyPassword()` in `src/crypto.ts`. SHA256 and HMAC-SHA256 still use
-`node:crypto` (no cap there).
+`@noble/hashes` (pure JS, no cap) for PBKDF2 — but only inside the
+`HeavyCompute` Durable Object (`src/durable/`), never in the request Worker.
+SHA256 and HMAC-SHA256 still use `node:crypto` (no cap there).
 
-When the `VAULTUR_HEAVY` Durable Object binding is configured, the PBKDF2
-derivation is offloaded to a stateless DO (`HeavyCompute`, `src/durable/`)
-for a higher CPU budget (free-tier friendly). The offload is transparent:
-middleware (`src/app.ts`) sets a runner via `AsyncLocalStorage` so callers
-are oblivious. Omit the binding to run inline (recommended for paid plans).
+All server-side PBKDF2 (`pbkdf2()` / `hashPassword()` / `verifyPassword()` in
+`src/crypto.ts`) is offloaded to the stateless `HeavyCompute` DO via the
+required `VAULTUR_HEAVY` binding, for a higher CPU budget (free-tier friendly).
+The offload is transparent: middleware (`src/app.ts`) installs a runner via
+`AsyncLocalStorage`; `pbkdf2()` throws if no runner is present, so the Worker
+never derives inline, and `src/app.ts` returns a 500 if the binding is missing.
 
 ## Commands (run at repo root)
 

@@ -12,7 +12,11 @@ export interface Bindings {
 	// src/services/storage.ts) when the binding isn't present.
 	VAULTUR_FILES?: R2Bucket
 	VAULTUR_NOTIFICATIONS: DurableObjectNamespace
-	VAULTUR_HEAVY?: DurableObjectNamespace
+	// Required: all server-side PBKDF2 is offloaded to this DO (see src/crypto.ts
+	// / src/app.ts). The Worker has no inline fallback, so this binding must be
+	// configured in every deployment. src/app.ts also guards it at runtime, since
+	// Worker bindings are populated at runtime and the type cannot enforce config.
+	VAULTUR_HEAVY: DurableObjectNamespace
 	VAULTUR_EMAIL?: EmailBinding
 	VAULTUR_ASSETS?: Fetcher
 

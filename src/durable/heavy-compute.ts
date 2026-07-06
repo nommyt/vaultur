@@ -13,8 +13,9 @@ import { b64Decode, b64Encode } from "../util"
  * A single DO instance ("vaultur:heavy") accepts POST /pbkdf2 with
  * { password, salt, iterations, dkLen } in base64 and returns { digest }.
  *
- * Configure by adding the VAULTUR_HEAVY binding in wrangler.jsonc. When the
- * binding is absent the main Worker runs noble inline.
+ * Configure by adding the VAULTUR_HEAVY binding in wrangler.jsonc. This binding
+ * is required: the main Worker offloads ALL server-side PBKDF2 here and never
+ * derives inline.
  */
 export class HeavyCompute extends DurableObject {
 	override async fetch(request: Request): Promise<Response> {

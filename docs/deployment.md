@@ -11,7 +11,7 @@ Cloudflare:
 | Icon cache, 2FA email codes, rate-limit counters | KV                    | `VAULTUR_KV`                   |
 | Attachments & file Sends                         | KV, or R2 (optional)  | `VAULTUR_KV` / `VAULTUR_FILES` |
 | Live-sync WebSocket hub                          | Durable Objects       | `VAULTUR_NOTIFICATIONS`        |
-| PBKDF2 offload (optional)                        | Durable Objects       | `VAULTUR_HEAVY`                |
+| PBKDF2 offload                                   | Durable Objects       | `VAULTUR_HEAVY`                |
 | Transactional email                              | Email Sending         | `VAULTUR_EMAIL`                |
 | Web vault UI                                     | Workers Static Assets | `VAULTUR_ASSETS`               |
 
@@ -229,15 +229,13 @@ The official mobile apps dislike `*.workers.dev`. Add a custom domain:
 
 ---
 
-## 8. PBKDF2 offload (optional)
+## 8. PBKDF2 offload (HeavyCompute Durable Object)
 
-Vaultur uses `@noble/hashes` (pure JS) for server-side PBKDF2 to avoid
-Cloudflare Workers' 100k iteration cap on native crypto. This works on any
-plan — it's just V8 compute.
-
-On the **Free plan**, where Workers have a small per-request CPU budget,
-enabling the optional `VAULTUR_HEAVY` Durable Object moves the PBKDF2
-derivation into a DO with a 30-second CPU budget (free-tier friendly):
+All server-side PBKDF2 is offloaded to the `HeavyCompute` Durable Object, which
+runs `@noble/hashes` (pure JS) with a 30-second CPU budget — this both dodges
+Cloudflare Workers' 100k native-crypto iteration cap and keeps the CPU cost off
+the request Worker (free-tier friendly). The request Worker never hashes inline;
+the binding is required and the committed `wrangler.jsonc` already declares it:
 
 ```jsonc
 "durable_objects": {
@@ -248,13 +246,12 @@ derivation into a DO with a 30-second CPU budget (free-tier friendly):
 },
 "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["NotificationsHub"] },
-    { "tag": "v2", "new_classes": ["HeavyCompute"] }
+    { "tag": "v2", "new_sqlite_classes": ["HeavyCompute"] }
 ]
 ```
 
-**On the Paid plan** (30s CPU budget), omit the `VAULTUR_HEAVY` binding and
-let PBKDF2 run inline — it completes in ~450ms at 600k iterations with
-no network hop.
+(Free-plan Durable Object namespaces require the SQLite storage backend, hence
+`new_sqlite_classes`; `HeavyCompute` is stateless so this has no code effect.)
 
 The offload happens transparently: middleware wraps the request in an
 `AsyncLocalStorage` context, and `pbkdf2()` / `hashPassword()` /

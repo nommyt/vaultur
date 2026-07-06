@@ -1,9 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { createHash, createHmac } from "node:crypto"
 
-import { pbkdf2Async } from "@noble/hashes/pbkdf2.js"
-import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js"
-
 import { b64Decode, b64Encode, constantTimeEqual, randomBytes } from "./util"
 
 /**
@@ -11,14 +8,15 @@ import { b64Decode, b64Encode, constantTimeEqual, randomBytes } from "./util"
  * clients derive a master-password hash (PBKDF2/Argon2id client-side) and send
  * it as `password`; the server stores PBKDF2-HMAC-SHA256(clientHash, salt, N).
  *
- * Uses @noble/hashes (pure JS) instead of native crypto — both WebCrypto and
- * node:crypto pbkdf2 in workerd cap iterations at 100_000 in production
- * (cloudflare/workerd#1346), while @noble/hashes runs as V8 compute with no
- * such limit, so vaultwarden's 600k default is achievable.
+ * The PBKDF2 derivation runs EXCLUSIVELY in the HeavyCompute Durable Object
+ * (src/durable/heavy-compute.ts), reached through a Pbkdf2Runner that middleware
+ * (src/app.ts) installs via AsyncLocalStorage. The request Worker never derives
+ * inline: workerd caps native PBKDF2 at 100k iterations in production
+ * (cloudflare/workerd#1346), and the pure-JS alternative (@noble/hashes) is
+ * CPU-heavy, so all heavy compute is offloaded to the DO. @noble/hashes
+ * therefore lives only inside the DO, not in this request path.
  *
- * When the VAULTUR_HEAVY Durable Object binding is active, the derivation is
- * offloaded to a DO for a higher CPU budget (free-tier friendly), set via
- * AsyncLocalStorage by middleware — callers are oblivious.
+ * SHA256 and HMAC-SHA256 still use node:crypto (no cap there).
  */
 
 export interface Pbkdf2Runner {
@@ -39,8 +37,15 @@ export async function pbkdf2(
 	lengthBytes = 32
 ): Promise<Uint8Array> {
 	const runner = pbkdf2Als.getStore()
-	if (runner) return runner.derive(password, salt, iterations, lengthBytes)
-	return pbkdf2Async(nobleSha256, password, salt, { c: iterations, dkLen: lengthBytes })
+	if (!runner) {
+		throw new Error(
+			"No PBKDF2 runner in context: server-side PBKDF2 runs exclusively in the " +
+				"HeavyCompute Durable Object. Ensure VAULTUR_HEAVY is bound and the call " +
+				"runs inside the app middleware (src/app.ts), or wrap it in " +
+				"pbkdf2Als.run(heavyRunner(ns), ...) as the tests do."
+		)
+	}
+	return runner.derive(password, salt, iterations, lengthBytes)
 }
 
 export interface PasswordRecord {
