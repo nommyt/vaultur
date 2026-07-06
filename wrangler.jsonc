@@ -28,15 +28,15 @@
 		{
 			"binding": "VAULTUR_DB",
 			"database_name": "vaultur",
-			"database_id": "00000000-0000-0000-0000-000000000000", // pnpm wrangler d1 create vaultur
+			// pnpm wrangler d1 create vaultur
 			"migrations_dir": "migrations"
 		}
 	],
 	"kv_namespaces": [
 		{
 			// Icon cache, ephemeral state (2FA email codes, rate-limit fallback)
-			"binding": "VAULTUR_KV",
-			"id": "00000000000000000000000000000000" // pnpm wrangler kv namespace create VAULTUR_KV
+			"binding": "VAULTUR_KV"
+			// pnpm wrangler kv namespace create VAULTUR_KV
 		}
 	],
 	// Cipher attachments + file Sends. R2 requires a paid Cloudflare plan — this
