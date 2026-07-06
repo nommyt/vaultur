@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { secureHeaders } from "hono/secure-headers"
 
 import { accountRoutes } from "./api/accounts"
 import { adminRoutes } from "./api/admin"
@@ -33,6 +34,41 @@ import { getConfigOverrides } from "./services/server-config"
 
 export function createApp() {
 	const app = new Hono<AppEnv>()
+
+	// Curated hardening headers. Cross-origin isolation headers (CORP/COOP/COEP)
+	// are explicitly disabled so the browser-extension client's cross-origin API
+	// fetches and the SSO popup flow keep working. The web vault SPA is served by
+	// the native `assets` runtime, not this app, so it is unaffected either way.
+	app.use(
+		secureHeaders({
+			crossOriginEmbedderPolicy: false,
+			crossOriginResourcePolicy: false,
+			crossOriginOpenerPolicy: false,
+			originAgentCluster: false,
+			// Plain max-age (no includeSubDomains) — safer for self-hosters whose
+			// apex/sibling subdomains are not all HTTPS.
+			strictTransportSecurity: "max-age=31536000",
+			referrerPolicy: "no-referrer",
+			xContentTypeOptions: "nosniff",
+			// X-Frame-Options is decided by the dedicated middleware below, not here —
+			// see its comment for why (Hono's LIFO middleware unwind).
+			xFrameOptions: false
+		})
+	)
+
+	// X-Frame-Options / frame-ancestors decided once, by path, in one place. Hono
+	// middleware unwinds LIFO (post-next() code of the FIRST-registered middleware
+	// runs LAST), so a value set here by a route-local override nested inside this
+	// app's routing (e.g. inside adminRoutes) would always be overwritten by
+	// whichever global middleware wraps it. Rather than fight that ordering, only
+	// one middleware ever sets this header, decided by path.
+	app.use(async (c, next) => {
+		await next()
+		const pathname = new URL(c.req.url).pathname
+		const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/")
+		c.res.headers.set("X-Frame-Options", isAdmin ? "DENY" : "SAMEORIGIN")
+		if (isAdmin) c.res.headers.set("Content-Security-Policy", "frame-ancestors 'none'")
+	})
 
 	app.use(async (c, next) => {
 		const secretProblem = jwtSecretProblem(c.env.JWT_SECRET)
