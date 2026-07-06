@@ -24,6 +24,7 @@
 		"build": "bash scripts/ensure-web-vault.sh && wrangler deploy --dry-run --outdir dist",
 		"test": "vitest run",
 		"test:heavy": "vitest run --config vitest.heavy.config.ts",
+		"test:freetier": "vitest run --config vitest.freetier.config.ts",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
 		"cf-typegen": "wrangler types",

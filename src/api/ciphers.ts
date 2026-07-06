@@ -660,7 +660,7 @@ async function hardDelete(c: Ctx, cipher: Cipher) {
 	const db = c.get("db")
 	const { user, device } = auth(c)
 	const affected = await usersWithCipherAccess(db, cipher)
-	await deleteCipher(db, c.env.VAULTUR_FILES, cipher)
+	await deleteCipher(db, c.get("storage"), cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherDelete, cipher, affected, device.uuid)
 	if (cipher.organizationUuid) {
 		await logOrgEvent(db, c.get("config"), {
@@ -881,7 +881,7 @@ cipherRoutes.post("/ciphers/purge", async (c) => {
 		if (!member || !hasFullAccess(member))
 			err("You do not have permission to purge the organization vault")
 		const orgCiphers = await db.select().from(ciphers).where(eq(ciphers.organizationUuid, orgId))
-		for (const cipher of orgCiphers) await deleteCipher(db, c.env.VAULTUR_FILES, cipher)
+		for (const cipher of orgCiphers) await deleteCipher(db, c.get("storage"), cipher)
 		await logOrgEvent(db, c.get("config"), {
 			eventType: EventType.OrganizationPurgedVault,
 			orgUuid: orgId,
@@ -891,7 +891,7 @@ cipherRoutes.post("/ciphers/purge", async (c) => {
 		})
 	} else {
 		const owned = await db.select().from(ciphers).where(eq(ciphers.userUuid, user.uuid))
-		for (const cipher of owned) await deleteCipher(db, c.env.VAULTUR_FILES, cipher)
+		for (const cipher of owned) await deleteCipher(db, c.get("storage"), cipher)
 		await db.delete(folders).where(eq(folders.userUuid, user.uuid))
 		await touchUser(db, user.uuid)
 	}

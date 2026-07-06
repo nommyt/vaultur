@@ -17,7 +17,8 @@ Vaultur speaks the real Bitwarden API, so the official clients — browser
 extensions, mobile apps, desktop, CLI, and the web vault — work against it
 unmodified, as a self-hosted server. It's written in TypeScript on
 [Hono](https://hono.dev) and deploys as a single Cloudflare Worker backed by
-D1, R2, KV, Durable Objects, and Email Sending.
+D1, KV, Durable Objects, and Email Sending — R2 is an optional upgrade for
+larger attachments (see below).
 
 Inspired by [vaultwarden](https://github.com/dani-garcia/vaultwarden) (the
 API surface and behavior are ported from it, field for field) and
@@ -49,7 +50,7 @@ fits inside Cloudflare's free tier for personal/small-team use.
 | ------------------------------------- | ------------------------------------------------ | ----------------------------------------- |
 | Runtime                               | Rust binary / Docker container you run and patch | Cloudflare Worker — no server to manage   |
 | Database                              | SQLite, MySQL, or PostgreSQL                     | D1 (SQLite at the edge)                   |
-| Attachments / cache                   | Local disk or S3 via opendal                     | R2 + KV, native bindings                  |
+| Attachments / cache                   | Local disk or S3 via opendal                     | KV by default, R2 opt-in, native bindings |
 | Scaling                               | Manual — bigger box, more replicas               | Automatic, edge-distributed               |
 | Typical cost, small team              | A VPS, running 24/7                              | Cloudflare free tier                      |
 | Organizations, Send, emergency access | ✅                                               | ✅                                        |
@@ -78,8 +79,8 @@ flowchart LR
     Clients --> W["Cloudflare Worker<br/>(Hono app)"]
 
     W --> D1[("D1<br/>vault database")]
-    W --> R2[("R2<br/>attachments & file Sends")]
-    W --> KV[("KV<br/>icon cache, rate limits, 2FA codes")]
+    W --> R2[("R2 (optional)<br/>attachments & file Sends")]
+    W --> KV[("KV<br/>icon cache, rate limits, 2FA codes<br/>+ attachments/Sends when R2 absent")]
     W --> DO[["Durable Objects<br/>live-sync WebSocket hub<br/>+ optional PBKDF2 offload"]]
 ```
 
@@ -93,8 +94,9 @@ Cloudflare binding, not a third-party dependency.
   API-key login, login-with-device (auth requests), new-device alerts
 - **Vault**: sync, ciphers (all 5 types incl. SSH keys), folders, favorites,
   archives, soft-delete/restore, import, purge, per-cipher keys
-- **Attachments** on R2 (both the v2 signed upload flow and the older flow
-  some clients still use)
+- **Attachments** (both the v2 signed upload flow and the older flow some
+  clients still use), stored in KV by default or R2 when bound — see
+  [Storage: KV vs R2](#storage-kv-vs-r2)
 - **Bitwarden Send** (text + file, passwords, access limits)
 - **Two-factor**: authenticator TOTP, email codes, **WebAuthn/FIDO2**, **Duo**
   (Universal Prompt), **YubiKey OTP**, recovery codes, remember-device tokens
@@ -200,15 +202,26 @@ perl -i -pe 's#^ADMIN_TOKEN=.*#ADMIN_TOKEN="'"$(openssl rand -base64 48 | tr -d 
 pnpm wrangler login
 pnpm wrangler d1 create vaultur                       # paste the id into wrangler.jsonc
 pnpm wrangler kv namespace create VAULTUR_KV          # paste the id into wrangler.jsonc
-pnpm wrangler r2 bucket create vaultur-files
 openssl rand -base64 64 | tr -d '\n' | pnpm wrangler secret put JWT_SECRET
 pnpm db:migrate:remote
 pnpm deploy
 ```
 
-That's the minimum to get a running server on the Cloudflare free tier. For
-email sending, a custom domain, mobile push, and the full configuration
-reference, see **[docs/deployment.md](docs/deployment.md)**.
+That's the minimum to get a running server on the Cloudflare free tier —
+attachments and file Sends work out of the box, stored in KV (25 MiB/file
+cap). For R2 storage (500 MB/file, needs a paid Cloudflare plan), email
+sending, a custom domain, mobile push, and the full configuration reference,
+see **[docs/deployment.md](docs/deployment.md)**.
+
+### Storage: KV vs R2
+
+File storage picks its backend automatically from `wrangler.jsonc`: if the
+`VAULTUR_FILES` R2 binding is present, attachments and file Sends go to R2
+(500 MB/file); if it's absent, they fall back to the `VAULTUR_KV` binding
+(25 MiB/file, and reads are eventually consistent — a just-uploaded file can
+briefly 404 from another edge location). There's no config toggle — add or
+remove the `r2_buckets` block in `wrangler.jsonc` (and run
+`pnpm wrangler r2 bucket create vaultur-files` once) to switch backends.
 
 ## Repo layout
 
@@ -242,6 +255,7 @@ not mocked:
 ```bash
 pnpm test                  # all tests except Durable Object offload tests
 pnpm test:heavy            # Durable Object PBKDF2 offload tests (separate config)
+pnpm test:freetier         # attachments/sends specs with no R2 binding (KV fallback)
 ```
 
 Every vaultwarden route is covered by an automated parity test

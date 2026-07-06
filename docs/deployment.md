@@ -4,19 +4,22 @@ Vaultur is a single Cloudflare Worker. One `wrangler.jsonc` deploys the API,
 the web vault, and the scheduled jobs — everything it needs runs on
 Cloudflare:
 
-| Concern                                          | Cloudflare product    | Binding                 |
-| ------------------------------------------------ | --------------------- | ----------------------- |
-| API + web-vault host                             | Workers               | —                       |
-| Vault database                                   | D1 (SQLite)           | `VAULTUR_DB`            |
-| Attachments & file Sends                         | R2                    | `VAULTUR_FILES`         |
-| Icon cache, 2FA email codes, rate-limit counters | KV                    | `VAULTUR_KV`            |
-| Live-sync WebSocket hub                          | Durable Objects       | `VAULTUR_NOTIFICATIONS` |
-| PBKDF2 offload (optional)                        | Durable Objects       | `VAULTUR_HEAVY`         |
-| Transactional email                              | Email Sending         | `VAULTUR_EMAIL`         |
-| Web vault UI                                     | Workers Static Assets | `VAULTUR_ASSETS`        |
+| Concern                                          | Cloudflare product    | Binding                        |
+| ------------------------------------------------ | --------------------- | ------------------------------ |
+| API + web-vault host                             | Workers               | —                              |
+| Vault database                                   | D1 (SQLite)           | `VAULTUR_DB`                   |
+| Icon cache, 2FA email codes, rate-limit counters | KV                    | `VAULTUR_KV`                   |
+| Attachments & file Sends                         | KV, or R2 (optional)  | `VAULTUR_KV` / `VAULTUR_FILES` |
+| Live-sync WebSocket hub                          | Durable Objects       | `VAULTUR_NOTIFICATIONS`        |
+| PBKDF2 offload (optional)                        | Durable Objects       | `VAULTUR_HEAVY`                |
+| Transactional email                              | Email Sending         | `VAULTUR_EMAIL`                |
+| Web vault UI                                     | Workers Static Assets | `VAULTUR_ASSETS`               |
 
-The whole thing fits inside Cloudflare's free tier (R2 needs a card on file but
-has a free allowance).
+The whole thing fits inside Cloudflare's free tier. R2 is an optional upgrade
+for attachments/Sends larger than KV's 25 MiB cap — it requires enabling
+billing (a card on file), even though it has its own free monthly allowance;
+skip it and file storage falls back to KV automatically (see
+[§1](#1-create-the-storage-resources)).
 
 ---
 
@@ -39,9 +42,6 @@ pnpm wrangler d1 create vaultur
 
 # KV namespace — copy the printed "id"
 pnpm wrangler kv namespace create VAULTUR_KV
-
-# R2 bucket (name must match wrangler.jsonc)
-pnpm wrangler r2 bucket create vaultur-files
 ```
 
 Open **`wrangler.jsonc`** and paste the two IDs:
@@ -52,7 +52,33 @@ Open **`wrangler.jsonc`** and paste the two IDs:
 "kv_namespaces": [{ "binding": "VAULTUR_KV", "id": "PASTE_KV_ID" }],
 ```
 
-(The R2 bucket and the two Durable Objects are referenced by name/class and need no ID.)
+(The two Durable Objects are referenced by name/class and need no ID.)
+
+That's enough to run: attachments and file Sends store in `VAULTUR_KV` when
+there's no R2 bucket bound, capped at 25 MiB/file.
+
+### Optional: R2 for larger attachments
+
+R2 raises the attachment/Send size cap to 500 MB/file and gives read-after-write
+consistency (KV is eventually consistent). It requires enabling billing on the
+Cloudflare account (a card on file) even though R2 itself has a free monthly
+allowance. To opt in:
+
+```bash
+pnpm wrangler r2 bucket create vaultur-files
+```
+
+Then uncomment/add the `r2_buckets` block in `wrangler.jsonc`:
+
+```jsonc
+"r2_buckets": [{ "binding": "VAULTUR_FILES", "bucket_name": "vaultur-files" }],
+```
+
+Redeploy (`pnpm deploy`) and new uploads use R2 automatically — no config
+toggle, selection is based purely on whether the binding exists. Existing
+files already in KV are left in place and still served from there (both
+backends key files identically: `attachments/<cipherId>/<attachmentId>` and
+`sends/<sendId>/<fileId>`); there's no built-in migration between backends.
 
 ---
 
@@ -254,9 +280,9 @@ Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
 - `12 7 * * 1` (every Sunday 07:12; Cloudflare cron uses 1=Sunday) — purge soft-deleted ciphers older than
   `TRASH_AUTO_DELETE_DAYS`.
-- `*/15 * * * *` — purge expired Sends (and their R2 objects), expired
-  auth-requests, and stale incomplete-2FA records. Early-outs when there is
-  nothing to purge, to avoid unnecessary R2/DB writes.
+- `*/15 * * * *` — purge expired Sends (and their stored files, in KV or R2),
+  expired auth-requests, and stale incomplete-2FA records. Early-outs when
+  there is nothing to purge, to avoid unnecessary storage/DB writes.
 
 ---
 

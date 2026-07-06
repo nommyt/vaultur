@@ -2,12 +2,15 @@ import type { AuthContext } from "./auth/middleware"
 import type { Config } from "./config"
 import type { Db } from "./db"
 import type { EmailBinding } from "./services/mail"
+import type { BlobStore } from "./services/storage"
 
 /** Worker bindings — mirrors wrangler.jsonc. */
 export interface Bindings {
 	VAULTUR_DB: D1Database
 	VAULTUR_KV: KVNamespace
-	VAULTUR_FILES: R2Bucket
+	// R2 requires a paid Cloudflare plan — optional; falls back to KV (see
+	// src/services/storage.ts) when the binding isn't present.
+	VAULTUR_FILES?: R2Bucket
 	VAULTUR_NOTIFICATIONS: DurableObjectNamespace
 	VAULTUR_HEAVY?: DurableObjectNamespace
 	VAULTUR_EMAIL?: EmailBinding
@@ -74,6 +77,7 @@ export interface Bindings {
 export interface Variables {
 	db: Db
 	config: Config
+	storage: BlobStore
 	auth?: AuthContext
 	ip: string
 }

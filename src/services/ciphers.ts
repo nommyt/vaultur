@@ -25,6 +25,7 @@ import { err } from "../error"
 import { CipherType, MembershipStatus, MembershipType, OrgPolicyType } from "../shared"
 import { ci, uuid } from "../util"
 import { hasFullAccess, isAtLeast, findConfirmedMembership } from "./memberships"
+import type { BlobStore } from "./storage"
 import { loadCipherSyncData, getAccessRestrictions, type CipherSyncData } from "./vault"
 
 // ---------------------------------------------------------------------------
@@ -363,10 +364,10 @@ export async function updateUsersRevisionForCipher(db: Db, cipher: Cipher): Prom
 	return userIds
 }
 
-export async function deleteCipher(db: Db, files: R2Bucket, cipher: Cipher): Promise<void> {
+export async function deleteCipher(db: Db, store: BlobStore, cipher: Cipher): Promise<void> {
 	// Delete attachment blobs
 	const atts = await db.select().from(attachments).where(eq(attachments.cipherUuid, cipher.uuid))
-	await Promise.all(atts.map((a) => files.delete(`attachments/${cipher.uuid}/${a.id}`)))
+	await Promise.all(atts.map((a) => store.delete(`attachments/${cipher.uuid}/${a.id}`)))
 	await db.delete(ciphers).where(eq(ciphers.uuid, cipher.uuid))
 	await updateUsersRevisionForCipher(db, cipher)
 }

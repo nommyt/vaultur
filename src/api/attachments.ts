@@ -12,6 +12,7 @@ import { Notify } from "../services/notify"
 import {
 	attachmentToJson,
 	cipherToJson,
+	displaySize,
 	getAccessRestrictions,
 	loadCipherSyncData
 } from "../services/vault"
@@ -50,7 +51,7 @@ attachmentDownloadRoutes.get("/attachments/:cipherId/:attachmentId", async (c) =
 		notFound()
 	}
 
-	const object = await c.env.VAULTUR_FILES.get(fileKey(cipherId, attachmentId))
+	const object = await c.get("storage").get(fileKey(cipherId, attachmentId))
 	if (!object) notFound()
 
 	return new Response(object.body, {
@@ -93,6 +94,12 @@ attachmentRoutes.post("/ciphers/:id/attachment/v2", async (c) => {
 	const adminRequest = Boolean(ci(body, "adminRequest"))
 	if (!key || !fileName) err("Missing attachment metadata")
 	if (!Number.isFinite(fileSize) || fileSize < 0) err("Attachment size can't be negative")
+	const storage = c.get("storage")
+	if (fileSize > storage.maxBytes) {
+		err(
+			`Attachment exceeds the ${displaySize(storage.maxBytes)} limit for this server's storage backend`
+		)
+	}
 
 	const attachmentId = randomAlphanum(10).toLowerCase()
 	const attachment: Attachment = {
@@ -147,9 +154,13 @@ attachmentRoutes.post("/ciphers/:id/attachment/:attachmentId", async (c) => {
 		)
 	}
 
-	await c.env.VAULTUR_FILES.put(fileKey(cipher.uuid, attachmentId), file.stream(), {
-		httpMetadata: { contentType: "application/octet-stream" }
-	})
+	const storage = c.get("storage")
+	if (file.size > storage.maxBytes) {
+		err(
+			`Attachment exceeds the ${displaySize(storage.maxBytes)} limit for this server's storage backend`
+		)
+	}
+	await storage.put(fileKey(cipher.uuid, attachmentId), file.stream(), file.size)
 
 	const affected = await updateUsersRevisionForCipher(db, cipher)
 	new Notify(c.env, c.get("config"), c.executionCtx).cipherUpdate(
@@ -172,6 +183,13 @@ async function legacyUpload(c: Ctx) {
 	if (!(file instanceof File)) err("No data to upload")
 	const key = typeof form.key === "string" ? form.key : null
 
+	const storage = c.get("storage")
+	if (file.size > storage.maxBytes) {
+		err(
+			`Attachment exceeds the ${displaySize(storage.maxBytes)} limit for this server's storage backend`
+		)
+	}
+
 	const attachmentId = randomAlphanum(10).toLowerCase()
 	const attachment: Attachment = {
 		id: attachmentId,
@@ -181,9 +199,7 @@ async function legacyUpload(c: Ctx) {
 		akey: key
 	}
 	await db.insert(attachments).values(attachment)
-	await c.env.VAULTUR_FILES.put(fileKey(cipher.uuid, attachmentId), file.stream(), {
-		httpMetadata: { contentType: "application/octet-stream" }
-	})
+	await storage.put(fileKey(cipher.uuid, attachmentId), file.stream(), file.size)
 
 	const affected = await updateUsersRevisionForCipher(db, cipher)
 	new Notify(c.env, c.get("config"), c.executionCtx).cipherUpdate(
@@ -239,7 +255,7 @@ async function deleteAttachment(c: Ctx) {
 	})
 	if (!attachment || attachment.cipherUuid !== cipher.uuid) notFound("Attachment doesn't exist")
 
-	await c.env.VAULTUR_FILES.delete(fileKey(cipher.uuid, attachmentId))
+	await c.get("storage").delete(fileKey(cipher.uuid, attachmentId))
 	await db.delete(attachments).where(eq(attachments.id, attachmentId))
 
 	const affected = await updateUsersRevisionForCipher(db, cipher)

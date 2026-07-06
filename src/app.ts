@@ -31,6 +31,7 @@ import type { AppEnv } from "./env"
 import { onError, errorBody, errCode } from "./error"
 import { heavyRunner } from "./services/pbkdf2-offload"
 import { getConfigOverrides } from "./services/server-config"
+import { getBlobStore } from "./services/storage"
 
 export function createApp() {
 	const app = new Hono<AppEnv>()
@@ -101,6 +102,7 @@ export function createApp() {
 		const base = loadConfig(c.env, c.req.url)
 		const overrides = await getConfigOverrides(db)
 		c.set("config", applyOverrides(base, overrides))
+		c.set("storage", getBlobStore(c.env))
 		c.set("ip", c.req.header("CF-Connecting-IP") ?? "0.0.0.0")
 		const runner = c.env.VAULTUR_HEAVY ? heavyRunner(c.env.VAULTUR_HEAVY) : undefined
 		return pbkdf2Als.run(runner, () => next())

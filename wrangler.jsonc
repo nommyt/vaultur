@@ -39,13 +39,16 @@
 			"id": "00000000000000000000000000000000" // pnpm wrangler kv namespace create VAULTUR_KV
 		}
 	],
-	"r2_buckets": [
-		{
-			// Cipher attachments + file Sends
-			"binding": "VAULTUR_FILES",
-			"bucket_name": "vaultur-files"
-		}
-	],
+	// Cipher attachments + file Sends. R2 requires a paid Cloudflare plan — this
+	// binding is optional. Omit this whole block on the free tier: file storage
+	// then falls back to VAULTUR_KV automatically (25 MiB/file cap instead of
+	// R2's 500 MB; see src/services/storage.ts).
+	// "r2_buckets": [
+	// 	{
+	// 		"binding": "VAULTUR_FILES",
+	// 		"bucket_name": "vaultur-files"
+	// 	}
+	// ],
 	// ---------------------------------------------------------------------
 	// Durable Objects — WebSocket notifications hub (SignalR-compatible)
 	// ---------------------------------------------------------------------

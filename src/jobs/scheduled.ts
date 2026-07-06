@@ -4,13 +4,14 @@ import { authRequests, ciphers, createDb, sends, toDb, twofactorIncomplete } fro
 import type { Bindings } from "../env"
 import { purgeExpiredDuoContexts } from "../services/duo"
 import { purgeExpiredSsoAuth } from "../services/sso"
+import { getBlobStore } from "../services/storage"
 
 /**
  * Cron jobs (vaultwarden's background tasks); both early-out when nothing to purge:
  *  - weekly Sunday 07:12 (`12 7 * * 1`, CF cron where 1=Sun): purge soft-deleted
  *    ciphers older than TRASH_AUTO_DELETE_DAYS
  *    NOTE: tweak back to daily cadence (`12 7 * * *`) — currently weekly.
- *  - every 15 min:  purge expired sends (and their R2 objects), expired auth
+ *  - every 15 min:  purge expired sends (and their blobs), expired auth
  *    requests, and stale incomplete-2FA records.
  */
 export async function runScheduledJobs(
@@ -40,7 +41,7 @@ export async function runScheduledJobs(
 	}
 
 	// Every 15 minutes: purge sensitive expired data.
-	// Probe first and early-out when nothing needs purging (avoids R2/DB writes).
+	// Probe first and early-out when nothing needs purging (avoids blob-store/DB writes).
 	const nowStr = toDb(now)
 	const expiredSends = await db
 		.select({ uuid: sends.uuid, atype: sends.atype })
@@ -65,11 +66,11 @@ export async function runScheduledJobs(
 		return
 	}
 
-	// Purge expired sends and their R2 objects (file sends are keyed sends/<uuid>/)
+	// Purge expired sends and their blobs (file sends are keyed sends/<uuid>/)
+	const store = getBlobStore(env)
 	for (const s of expiredSends) {
 		if (s.atype === 1) {
-			const list = await env.VAULTUR_FILES.list({ prefix: `sends/${s.uuid}/` })
-			await Promise.all(list.objects.map((o) => env.VAULTUR_FILES.delete(o.key)))
+			await store.deletePrefix(`sends/${s.uuid}/`)
 		}
 	}
 	if (expiredSends.length > 0) {

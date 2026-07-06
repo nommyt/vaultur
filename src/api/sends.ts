@@ -288,7 +288,7 @@ sendAccessRoutes.get("/sends/:sendId/:fileId", async (c) => {
 	} catch {
 		notFound()
 	}
-	const object = await c.env.VAULTUR_FILES.get(fileKey(sendId, fileId))
+	const object = await c.get("storage").get(fileKey(sendId, fileId))
 	if (!object) notFound()
 	return new Response(object.body, {
 		headers: {
@@ -355,7 +355,10 @@ sendRoutes.post("/sends/file/v2", async (c) => {
 	if (!data.file) err("Send data not provided")
 	const fileLength = Number(data.fileLength ?? 0)
 	if (!Number.isFinite(fileLength) || fileLength <= 0) err("Invalid fileLength")
-	if (fileLength > 500 * 1024 * 1024) err("Send storage limit exceeded (max 500 MB)")
+	const maxBytes = c.get("storage").maxBytes
+	if (fileLength > maxBytes) {
+		err(`Send storage limit exceeded (max ${displaySize(maxBytes)})`)
+	}
 
 	const send = await newSendFromData(db, user, data)
 	const fileId = randomAlphanum(24).toLowerCase()
@@ -397,9 +400,11 @@ sendRoutes.post("/sends/:id/file/:fileId", async (c) => {
 		)
 	}
 
-	await c.env.VAULTUR_FILES.put(fileKey(send.uuid, fileId), file.stream(), {
-		httpMetadata: { contentType: "application/octet-stream" }
-	})
+	const storage = c.get("storage")
+	if (file.size > storage.maxBytes) {
+		err(`Send storage limit exceeded (max ${displaySize(storage.maxBytes)})`)
+	}
+	await storage.put(fileKey(send.uuid, fileId), file.stream(), file.size)
 	await touchUser(db, user.uuid)
 	sendNotifier(c).sendUpdate(UpdateType.SyncSendCreate, send, [user.uuid], device.uuid)
 	return c.body(null, 200)
@@ -419,6 +424,11 @@ sendRoutes.post("/sends/file", async (c) => {
 	const file = form.data ?? form.file
 	if (!model || !(file instanceof File)) err("Invalid multipart data")
 
+	const storage = c.get("storage")
+	if (file.size > storage.maxBytes) {
+		err(`Send storage limit exceeded (max ${displaySize(storage.maxBytes)})`)
+	}
+
 	const data = parseSendData(model)
 	const send = await newSendFromData(db, user, data)
 	const fileId = randomAlphanum(24).toLowerCase()
@@ -429,9 +439,7 @@ sendRoutes.post("/sends/file", async (c) => {
 		sizeName: displaySize(file.size)
 	})
 	await db.insert(sends).values(send)
-	await c.env.VAULTUR_FILES.put(fileKey(send.uuid, fileId), file.stream(), {
-		httpMetadata: { contentType: "application/octet-stream" }
-	})
+	await storage.put(fileKey(send.uuid, fileId), file.stream(), file.size)
 	await touchUser(db, user.uuid)
 	sendNotifier(c).sendUpdate(UpdateType.SyncSendCreate, send, [user.uuid], device.uuid)
 	return c.json(sendToJson(send))
@@ -515,7 +523,7 @@ sendRoutes.delete("/sends/:id", async (c) => {
 
 	if (send.atype === SendType.File) {
 		const data = JSON.parse(send.data) as { id?: string }
-		if (data.id) await c.env.VAULTUR_FILES.delete(fileKey(send.uuid, data.id))
+		if (data.id) await c.get("storage").delete(fileKey(send.uuid, data.id))
 	}
 	await db.delete(sends).where(eq(sends.uuid, send.uuid))
 	await touchUser(db, user.uuid)

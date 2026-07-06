@@ -99,6 +99,9 @@ are oblivious. Omit the binding to run inline (recommended for paid plans).
 - `pnpm test:heavy` — DO-specific tests (separate vitest config with
   `VAULTUR_HEAVY` binding; not included in `pnpm test` due to storage
   isolation limitations)
+- `pnpm test:freetier` — attachments/sends specs run with no R2 binding, to
+  exercise the `KvBlobStore` fallback path (`src/services/storage.ts`;
+  separate config for the same binding-isolation reason as `test:heavy`)
 - `pnpm format` / `pnpm format:check` — oxfmt write / check
 - `pnpm dev` — wrangler dev (needs `.env`, see `.env.example`)
 - `pnpm deploy` — wrangler deploy
