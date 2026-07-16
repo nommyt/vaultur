@@ -38,3 +38,35 @@ export async function checkAdminLoginRateLimit(
 	}
 	await kv.put(key, String(current + 1), { expirationTtl: windowSeconds * 2 })
 }
+
+/**
+ * Per-account failed-login limiter (fixed window, best-effort, KV). Counts
+ * only FAILURES — successful logins never increment — so an attacker cannot
+ * lock the owner out by hammering the endpoint with garbage while the owner
+ * logs in normally; the worst case is a rolling 60s lockout while an active
+ * brute force is underway. Complements the per-IP limiter above (which an
+ * attacker evades by rotating IPs) and stops the HeavyCompute PBKDF2 spend
+ * for locked accounts.
+ */
+export async function checkUserLoginFailureLimit(
+	kv: KVNamespace,
+	config: Config,
+	email: string
+): Promise<void> {
+	const current = Number((await kv.get(userFailureKey(email))) ?? "0")
+	if (current >= config.loginRatelimitUserMaxFailures) {
+		errCode("Too many requests. Try again later.", 429)
+	}
+}
+
+/** Record one failed credential check for this account (best-effort). */
+export async function recordUserLoginFailure(kv: KVNamespace, email: string): Promise<void> {
+	const key = userFailureKey(email)
+	const current = Number((await kv.get(key)) ?? "0")
+	await kv.put(key, String(current + 1), { expirationTtl: 120 })
+}
+
+function userFailureKey(email: string): string {
+	const windowSeconds = 60
+	return `ratelimit:login-user:${email}:${Math.floor(Date.now() / 1000 / windowSeconds)}`
+}

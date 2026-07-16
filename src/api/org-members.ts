@@ -1336,10 +1336,23 @@ orgMemberRoutes.get("/organizations/:orgId/auto-enroll-status", async (c) => {
 	return c.json({ id: org.uuid, resetPasswordEnabled: false })
 })
 
+/**
+ * vaultwarden check_reset_password_applicable_and_permissions: the acting
+ * member must outrank or equal the target. Owner may reset anyone; Admin may
+ * reset only members at Admin rank or below — never an Owner.
+ */
+function canResetPassword(actor: Membership, target: Membership): boolean {
+	if (actor.atype === MembershipType.Owner) return true
+	if (actor.atype === MembershipType.Admin) {
+		return membershipRank(target.atype) <= membershipRank(MembershipType.Admin)
+	}
+	return false
+}
+
 // Admin account recovery: view a member's reset-password details
 orgMemberRoutes.get("/organizations/:orgId/users/:memberId/reset-password-details", async (c) => {
 	const orgId = c.req.param("orgId")!
-	await requireMember(c, orgId, MembershipType.Admin)
+	const actorMember = await requireMember(c, orgId, MembershipType.Admin)
 	const db = c.get("db")
 	const org = (await db.query.organizations.findFirst({ where: eq(organizations.uuid, orgId) }))!
 	const membership = await db.query.usersOrganizations.findFirst({
@@ -1349,6 +1362,9 @@ orgMemberRoutes.get("/organizations/:orgId/users/:memberId/reset-password-detail
 		)
 	})
 	if (!membership) err("User to reset isn't member of required organization")
+	if (!canResetPassword(actorMember, membership)) {
+		err("No permission to reset this user's password")
+	}
 	const member = (await db.query.users.findFirst({ where: eq(users.uuid, membership.userUuid) }))!
 	return c.json({
 		object: "organizationUserResetPasswordDetails",
@@ -1366,7 +1382,7 @@ orgMemberRoutes.get("/organizations/:orgId/users/:memberId/reset-password-detail
 orgMemberRoutes.put("/organizations/:orgId/users/:memberId/reset-password", async (c) => {
 	const { user: actor, device } = auth(c)
 	const orgId = c.req.param("orgId")!
-	await requireMember(c, orgId, MembershipType.Admin)
+	const actorMember = await requireMember(c, orgId, MembershipType.Admin)
 	const db = c.get("db")
 	const config = c.get("config")
 	const body = (await c.req.json()) as Record<string, unknown>
@@ -1378,6 +1394,9 @@ orgMemberRoutes.put("/organizations/:orgId/users/:memberId/reset-password", asyn
 		)
 	})
 	if (!membership) err("User to reset isn't member of required organization")
+	if (!canResetPassword(actorMember, membership)) {
+		err("No permission to reset this user's password")
+	}
 	if (!membership.resetPasswordKey) err("Password reset not or not correctly enrolled")
 	if (membership.status !== MembershipStatus.Confirmed) {
 		err("Organization user must be confirmed for password reset functionality")

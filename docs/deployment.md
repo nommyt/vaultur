@@ -288,30 +288,192 @@ Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
 ---
 
+## 11. Hardening a public deployment
+
+Bitwarden's end-to-end encryption protects vault contents even from the server,
+but a public server still exposes login, registration-adjacent, and administrative
+surfaces. Harden a personal deployment in four layers: use a custom domain so
+zone-level controls are available, disable the public `workers.dev` hostname,
+put Cloudflare Access in front of browser-only administration, and restrict who
+may authenticate with `LOGIN_ALLOWED_EMAILS` plus tighter invitation and
+organization settings.
+
+### 11.1 Move to a custom domain, then disable workers.dev
+
+Follow [section 7](#7-custom-domain-recommended-for-production) to attach the
+custom domain. In the deploy config, pin `DOMAIN` to the exact origin clients
+use, including `https://` and without a trailing path:
+
+```jsonc
+"routes": [{ "pattern": "vault.example.com", "custom_domain": true }],
+"vars": {
+    "DOMAIN": "https://vault.example.com"
+}
+```
+
+`DOMAIN` is security-sensitive: JWT issuers use the origin, and WebAuthn derives
+its relying-party ID from the hostname. Leaving it empty while two hostnames are
+live can mint tokens or credentials bound to whichever hostname handled the
+request.
+
+> **Migration caution:** Switching from `workers.dev` to a custom domain changes
+> the effective origin. All clients must sign in again, and WebAuthn credentials
+> registered under the old hostname will no longer work because their RP ID is
+> different. Before moving, disable WebAuthn temporarily or confirm that TOTP or
+> a recovery code works. Re-register WebAuthn on the new domain afterward.
+> Existing attachment and Send links can contain the old origin; re-copy any
+> links that are still shared.
+
+After that recovery path is ready, set both public development endpoints off in
+the deployment config and redeploy:
+
+```jsonc
+"workers_dev": false,
+"preview_urls": false
+```
+
+Keeping `workers_dev: false` in the deploy config matters: disabling the route
+only in the dashboard can be undone by a later Wrangler deployment. Verify the
+custom origin and the retired hostname after deployment:
+
+```bash
+curl -s https://vault.example.com/alive
+# -> an ISO timestamp
+
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://vaultur.<account-subdomain>.workers.dev/alive
+# -> 404
+```
+
+### 11.2 Put Cloudflare Access only on browser surfaces
+
+The client compatibility rule is absolute: **never put** `/api/*`,
+`/identity/*`, `/notifications/*`, `/icons/*`, `/events/*`, `/alive`,
+`/app-id.json`, or `/.well-known/*` behind Cloudflare Access. Native Bitwarden
+mobile, desktop, extension, and CLI clients cannot complete an interactive
+Access login or attach Access service-token headers. Protecting those paths
+breaks the clients; `LOGIN_ALLOWED_EMAILS` is the identity boundary for them.
+
+Protect `/admin` with a self-hosted Access application:
+
+1. In Cloudflare Zero Trust, open **Access → Applications** and add a
+   **Self-hosted** application.
+2. Use the vault hostname and the `admin` application path. Ensure both `/admin`
+   and `/admin/*` are covered if the dashboard presents them separately.
+3. Add an **Allow** policy with **Include → Emails** set to the operator's exact
+   email address and choose an appropriate session duration, such as 24 hours.
+4. Keep `ADMIN_TOKEN` configured. Access controls who can reach the panel;
+   Vaultur's token still controls who can use it.
+
+Do not put Access on the web-vault root by default. Protecting `/` also requires
+more-specific Access applications with **Bypass → Everyone** for every client
+path above. Missing one silently breaks a client feature, while the SPA itself
+is static and its authentication API is already restricted.
+
+Verify both sides of the boundary:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://vault.example.com/admin
+# -> 302 to cloudflareaccess.com
+
+curl -s -o /dev/null -w '%{http_code}\n' https://vault.example.com/api/config
+# -> 200; client API remains outside Access
+```
+
+### 11.3 Rate-limit the login endpoint at the WAF
+
+In the zone's current dashboard, open **Security → Security rules**, then
+**Create rule → Rate limiting rules**. Older dashboard navigation labels this
+**Security → WAF → Rate limiting rules**. On the Free plan, use the single
+available rule for the credential endpoint:
+
+| Setting           | Value                                                |
+| ----------------- | ---------------------------------------------------- |
+| Rule name         | `Vaultur login rate limit`                           |
+| Match expression  | `http.request.uri.path eq "/identity/connect/token"` |
+| Characteristic    | IP                                                   |
+| Requests / period | 8 requests / 10 seconds                              |
+| Action / duration | Block / 10 seconds                                   |
+
+Use **Block**, not a browser challenge: native clients cannot solve Cloudflare
+challenge pages. This rule complements rather than replaces the app's
+best-effort KV controls, `LOGIN_RATELIMIT_MAX_BURST` and
+`LOGIN_RATELIMIT_USER_MAX_FAILURES`. Paid plans can add longer periods and
+separate rules for registration-adjacent paths.
+
+Cloudflare rate counters can take a few seconds to update, so a zero-delay test
+may finish before enforcement begins. A short delay makes the result clear:
+
+```bash
+for i in {1..12}; do
+  curl -s -o /dev/null -w '%{http_code}\n' \
+    https://vault.example.com/identity/connect/token
+  sleep 0.25
+done
+# The unmatched GET normally returns 404; requests above the limit return 429.
+```
+
+Wait for the 10-second mitigation window to expire before signing in. If you
+enable Bot Fight Mode, geo-blocking, or managed challenges later, test official
+clients and exclude the client paths in section 11.2 from any browser challenge.
+
+### 11.4 Tighten configuration for a personal server
+
+Use these values in the private `wrangler.deploy.jsonc`. Most non-secret
+settings are also editable in the admin panel; an admin override takes
+precedence over the deploy config until it is reset.
+
+| Variable                   | Recommended value                       | Reason                                                                                                       |
+| -------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `LOGIN_ALLOWED_EMAILS`     | Operator email address(es)              | Exact-account allowlist across password, device approval, refresh, API-key, SSO, 2FA, and registration flows |
+| `INVITATIONS_ALLOWED`      | `false`                                 | Closes the remaining invitation-based account-creation path after onboarding                                 |
+| `ORG_CREATION_USERS`       | Operator email address(es)              | Prevents other accounts from creating organizations                                                          |
+| `EMERGENCY_ACCESS_ALLOWED` | `false` unless used                     | Emergency-access invitations expand account and recovery relationships                                       |
+| `PASSWORD_HINTS_ALLOW`     | `false`                                 | A personal deployment does not need the unauthenticated password-hint email surface                          |
+| `SIGNUPS_ALLOWED`          | `false`                                 | Keeps open registration disabled                                                                             |
+| `SIGNUPS_VERIFY`           | `true`                                  | Retains verification if registration is temporarily enabled                                                  |
+| `ADMIN_TOKEN`              | At least 32 random characters, or unset | Access layers in front of this secret; unsetting it disables `/admin` entirely with a 404                    |
+
+Keep `SIGNUPS_DOMAINS_WHITELIST` empty for an exact-email personal deployment;
+that setting accepts domain names, not complete email addresses. Generate the
+admin token with a cryptographically secure password manager or random-byte
+generator, and store it only as a Wrangler secret.
+
+### 11.5 What remains public
+
+The Bitwarden protocol requires endpoints such as `/api/config`,
+`/identity/accounts/prelogin`, and public Send access to remain unauthenticated.
+Fingerprinting the server as Bitwarden-compatible is therefore inherent; the
+vault payload remains end-to-end encrypted regardless.
+
+---
+
 ## Configuration reference
 
 All non-secret settings live in `wrangler.jsonc` under `vars`. Highlights:
 
-| Var                                  | Default        | Meaning                                                                                                                       |
-| ------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `DOMAIN`                             | request origin | Public origin used in links and JWT issuers                                                                                   |
-| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                                                                                             |
-| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                                                                                       |
-| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before first login                                                                                 |
-| `INVITATIONS_ALLOWED`                | `true`         | Allow inviting users who have no account yet                                                                                  |
-| `EMERGENCY_ACCESS_ALLOWED`           | `true`         | Enable emergency access                                                                                                       |
-| `SENDS_ALLOWED`                      | `true`         | Enable Bitwarden Send                                                                                                         |
-| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails allowed to create orgs                                                                        |
-| `PASSWORD_HINTS_ALLOW`               | `true`         | Allow storing/serving password hints                                                                                          |
-| `SHOW_PASSWORD_HINT`                 | `false`        | In no-mail mode, reveal hints inline                                                                                          |
-| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds over the client hash (`@noble/hashes` pure JS, no cap — workerd's native crypto is limited to 100k) |
-| `EMAIL_FROM` / `EMAIL_FROM_NAME`     | — / `Vaultur`  | Sender; empty `EMAIL_FROM` = no-mail mode                                                                                     |
-| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay                                                                                                             |
-| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Soft-delete purge window (0 disables)                                                                                         |
-| `ICON_SERVICE`                       | `internal`     | `internal` (proxy+cache) or a redirect service                                                                                |
-| `ICON_CACHE_TTL_SECONDS`             | `2592000`      | KV icon cache TTL (30 days)                                                                                                   |
-| `LOGIN_RATELIMIT_MAX_BURST`          | `10`           | Login attempts per IP per minute (soft, KV-based)                                                                             |
-| `ADMIN_SESSION_LIFETIME_MINUTES`     | `20`           | Admin cookie lifetime                                                                                                         |
+| Var                                  | Default        | Meaning                                                                                                                                                                                    |
+| ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DOMAIN`                             | request origin | Public origin used in links and JWT issuers                                                                                                                                                |
+| `SIGNUPS_ALLOWED`                    | `true`         | Open registration                                                                                                                                                                          |
+| `SIGNUPS_DOMAINS_WHITELIST`          | —              | CSV of email domains allowed to sign up                                                                                                                                                    |
+| `SIGNUPS_VERIFY`                     | `false`        | Require email verification before first login                                                                                                                                              |
+| `INVITATIONS_ALLOWED`                | `true`         | Allow inviting users who have no account yet                                                                                                                                               |
+| `EMERGENCY_ACCESS_ALLOWED`           | `true`         | Enable emergency access                                                                                                                                                                    |
+| `SENDS_ALLOWED`                      | `true`         | Enable Bitwarden Send                                                                                                                                                                      |
+| `ORG_CREATION_USERS`                 | `all`          | `all`, `none`, or CSV of emails allowed to create orgs                                                                                                                                     |
+| `PASSWORD_HINTS_ALLOW`               | `true`         | Allow storing/serving password hints                                                                                                                                                       |
+| `SHOW_PASSWORD_HINT`                 | `false`        | In no-mail mode, reveal hints inline                                                                                                                                                       |
+| `PASSWORD_ITERATIONS`                | `600000`       | Server-side PBKDF2 rounds over the client hash (`@noble/hashes` pure JS, no cap — workerd's native crypto is limited to 100k)                                                              |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME`     | — / `Vaultur`  | Sender; empty `EMAIL_FROM` = no-mail mode                                                                                                                                                  |
+| `PUSH_ENABLED` + installation id/key | `false`        | Mobile push relay                                                                                                                                                                          |
+| `TRASH_AUTO_DELETE_DAYS`             | `30`           | Soft-delete purge window (0 disables)                                                                                                                                                      |
+| `ICON_SERVICE`                       | `internal`     | `internal` (proxy+cache) or a redirect service                                                                                                                                             |
+| `ICON_CACHE_TTL_SECONDS`             | `2592000`      | KV icon cache TTL (30 days)                                                                                                                                                                |
+| `LOGIN_ALLOWED_EMAILS`               | _(empty)_      | Comma-separated emails allowed to log in or register; enforced on every grant type. Empty = all accounts. Also editable in the admin panel ("Allowed login emails"). Outranks invitations. |
+| `LOGIN_RATELIMIT_MAX_BURST`          | `10`           | Login attempts per IP per minute (soft, KV-based)                                                                                                                                          |
+| `LOGIN_RATELIMIT_USER_MAX_FAILURES`  | `5`            | Failed login attempts per account per minute before a temporary 429 lockout (counts failures only; per-IP limit is separate)                                                               |
+| `ADMIN_SESSION_LIFETIME_MINUTES`     | `20`           | Admin cookie lifetime                                                                                                                                                                      |
 
 Secrets (set with `wrangler secret put`, never in `wrangler.jsonc`):
 
@@ -452,3 +614,5 @@ the schema parity keeps hand-migration straightforward.
 | Live sync not updating                                                                                             | Confirm the `VAULTUR_NOTIFICATIONS` Durable Object migration (`tag: v1`) deployed; check the client reaches `/notifications/hub`.                                                                                                      |
 | Registration/login fails with `Pbkdf2 failed: iteration counts above 100000`                                       | You're running an older build that used `node:crypto` pbkdf2. Deploy the latest `main` — Vaultur now uses `@noble/hashes` (pure JS) with no iteration cap.                                                                             |
 | Extension/mobile "create account" fails (`masterPasswordHash cannot be blank`, `invalid email verification token`) | Official Bitwarden clients change their registration wire format over time (wrapped `masterPasswordAuthentication`/`masterPasswordUnlock` payloads, iOS's raw-text token response). Redeploy the latest `main` — Vaultur tracks these. |
+| All clients suddenly logged out / `Invalid claim` after moving to a custom domain                                  | Expected once: JWT issuers embed the origin, so clients must re-authenticate. If it persists, `DOMAIN` does not match the URL clients use. See section 11.1.                                                                           |
+| WebAuthn 2FA fails after moving domains                                                                            | The RP ID is bound to the hostname. Sign in with another 2FA method or recovery code, delete the old WebAuthn credential, and re-register it on the new domain. See section 11.1.                                                      |

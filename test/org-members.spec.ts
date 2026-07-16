@@ -251,3 +251,127 @@ describe("org members (mail-disabled auto-accept flow)", () => {
 		expect([403, 404, 400]).toContain(res.status)
 	})
 })
+
+describe("org account-recovery reset-password permissions", () => {
+	async function setupOrgWithMembers() {
+		const ownerEmail = "raowner@members.test"
+		const adminEmail = "raadmin@members.test"
+		const userEmail = "rauser@members.test"
+		for (const email of [ownerEmail, adminEmail, userEmail]) await registerUser(email)
+		const ownerToken = await loginUser(ownerEmail)
+		const adminToken = await loginUser(adminEmail)
+		const userToken = await loginUser(userEmail)
+
+		const org = (await (await api(ownerToken, "POST", "/api/organizations", ORG)).json()) as Record<
+			string,
+			any
+		>
+
+		await api(ownerToken, "POST", `/api/organizations/${org.id}/users/invite`, {
+			emails: [adminEmail, userEmail],
+			type: 2,
+			accessAll: false,
+			collections: [],
+			groups: []
+		})
+		let list = (await (
+			await api(ownerToken, "GET", `/api/organizations/${org.id}/users`)
+		).json()) as Record<string, any>
+		const rowOf = (email: string) => list.data.find((user: any) => user.email === email)
+		for (const email of [adminEmail, userEmail]) {
+			await api(
+				ownerToken,
+				"POST",
+				`/api/organizations/${org.id}/users/${rowOf(email).id}/confirm`,
+				{
+					key: "2.orgUserKey|iv=="
+				}
+			)
+		}
+		await api(ownerToken, "PUT", `/api/organizations/${org.id}/users/${rowOf(adminEmail).id}`, {
+			type: 1,
+			accessAll: false,
+			collections: []
+		})
+
+		list = (await (
+			await api(ownerToken, "GET", `/api/organizations/${org.id}/users`)
+		).json()) as Record<string, any>
+		const ids = {
+			owner: list.data.find((user: any) => user.email === ownerEmail).id,
+			admin: list.data.find((user: any) => user.email === adminEmail).id,
+			user: list.data.find((user: any) => user.email === userEmail).id
+		}
+
+		await api(
+			ownerToken,
+			"PUT",
+			`/api/organizations/${org.id}/users/${ids.owner}/reset-password-enrollment`,
+			{ resetPasswordKey: "2.ownerRecoveryKey|iv==" }
+		)
+		await api(
+			adminToken,
+			"PUT",
+			`/api/organizations/${org.id}/users/${ids.admin}/reset-password-enrollment`,
+			{ resetPasswordKey: "2.adminRecoveryKey|iv==" }
+		)
+		await api(
+			userToken,
+			"PUT",
+			`/api/organizations/${org.id}/users/${ids.user}/reset-password-enrollment`,
+			{ resetPasswordKey: "2.userRecoveryKey|iv==" }
+		)
+
+		return { org, ownerToken, adminToken, ids }
+	}
+
+	it("forbids an Admin from resetting an Owner's password", async () => {
+		const { org, adminToken, ids } = await setupOrgWithMembers()
+
+		const details = await api(
+			adminToken,
+			"GET",
+			`/api/organizations/${org.id}/users/${ids.owner}/reset-password-details`
+		)
+		expect(details.status).toBe(400)
+
+		const reset = await api(
+			adminToken,
+			"PUT",
+			`/api/organizations/${org.id}/users/${ids.owner}/reset-password`,
+			{ newMasterPasswordHash: "new-hash", key: "2.newUserKey|iv==" }
+		)
+		expect(reset.status).toBe(400)
+	})
+
+	it("allows an Admin to reset a regular User's password", async () => {
+		const { org, adminToken, ids } = await setupOrgWithMembers()
+
+		const details = await api(
+			adminToken,
+			"GET",
+			`/api/organizations/${org.id}/users/${ids.user}/reset-password-details`
+		)
+		expect(details.status).toBe(200)
+
+		const reset = await api(
+			adminToken,
+			"PUT",
+			`/api/organizations/${org.id}/users/${ids.user}/reset-password`,
+			{ newMasterPasswordHash: "new-hash", key: "2.newUserKey|iv==" }
+		)
+		expect(reset.status).toBe(200)
+	})
+
+	it("allows an Owner to reset an Admin's password", async () => {
+		const { org, ownerToken, ids } = await setupOrgWithMembers()
+
+		const reset = await api(
+			ownerToken,
+			"PUT",
+			`/api/organizations/${org.id}/users/${ids.admin}/reset-password`,
+			{ newMasterPasswordHash: "new-hash", key: "2.newUserKey|iv==" }
+		)
+		expect(reset.status).toBe(200)
+	})
+})

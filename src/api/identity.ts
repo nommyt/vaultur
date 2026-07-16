@@ -5,8 +5,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 
 import { basicClaims, decodeJwt, encodeJwt, issuer } from "../auth/jwt"
 import { createAuthTokens, type AuthMethod } from "../auth/tokens"
-import type { Config } from "../config"
-import { ssoConfigured } from "../config"
+import { loginAllowed, ssoConfigured, type Config } from "../config"
 import { verifyPassword } from "../crypto"
 import {
 	authRequests,
@@ -28,7 +27,11 @@ import { findDeviceByRefreshToken, getOrCreateDevice, touchDevice } from "../ser
 import { logUserEvent } from "../services/events"
 import { createMailer, mail, type Mailer } from "../services/mail"
 import { masterPasswordPolicy } from "../services/policies"
-import { checkLoginRateLimit } from "../services/ratelimit"
+import {
+	checkLoginRateLimit,
+	checkUserLoginFailureLimit,
+	recordUserLoginFailure
+} from "../services/ratelimit"
 import {
 	buildAuthorizeUrl,
 	exchangeCode,
@@ -170,6 +173,9 @@ async function refreshLogin(c: Ctx, db: Db, config: Config, data: ConnectData) {
 	if (!user || !user.enabled) {
 		errJson({ error: "invalid_grant" }, "Unable to refresh login credentials: Invalid user")
 	}
+	if (!loginAllowed(config, user.email)) {
+		errJson({ error: "invalid_grant" }, "Unable to refresh login credentials: Login not allowed")
+	}
 
 	const tokens = await createAuthTokens(
 		config,
@@ -196,8 +202,13 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 	await checkLoginRateLimit(c.env.VAULTUR_KV, config, ip)
 
 	const username = normalizeEmail(data.username!)
+	if (!loginAllowed(config, username)) {
+		err(`Username or password is incorrect. Try again`)
+	}
+	await checkUserLoginFailureLimit(c.env.VAULTUR_KV, config, username)
 	const user = await findUserByEmail(db, username)
 	if (!user) {
+		await recordUserLoginFailure(c.env.VAULTUR_KV, username)
 		err(`Username or password is incorrect. Try again`)
 	}
 
@@ -240,6 +251,7 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 				Number(data.deviceType ?? 14),
 				ip
 			)
+			await recordUserLoginFailure(c.env.VAULTUR_KV, username)
 			err("Username or access code is incorrect. Try again")
 		}
 	} else {
@@ -257,6 +269,7 @@ async function passwordLogin(c: Ctx, db: Db, config: Config, data: ConnectData, 
 				Number(data.deviceType ?? 14),
 				ip
 			)
+			await recordUserLoginFailure(c.env.VAULTUR_KV, username)
 			err(`Username or password is incorrect. Try again`)
 		}
 		// Server-side iteration upgrade (vaultwarden kdf_upgrade)
@@ -348,6 +361,7 @@ async function ssoLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip: s
 		data.code!,
 		data.codeVerifier
 	)
+	if (!loginAllowed(config, authUser.email)) err("Login not allowed for this account")
 
 	const deviceType = Number(data.deviceType ?? 14)
 	const mailer = createMailer(c.env.VAULTUR_EMAIL, config)
@@ -574,6 +588,7 @@ async function apiKeyLogin(c: Ctx, db: Db, config: Config, data: ConnectData, ip
 	const user = await db.query.users.findFirst({ where: eq(users.uuid, userUuid) })
 	if (!user) err("Invalid client_id")
 	if (!user.enabled) err("This user has been disabled (API key login)")
+	if (!loginAllowed(config, user.email)) err("Login not allowed for this account (API key login)")
 	if (!user.apiKey || !constantTimeEqualStr(user.apiKey, data.clientSecret!)) {
 		await logUserEvent(
 			db,
@@ -735,6 +750,7 @@ identityRoutes.post("/accounts/register/send-verification-email", async (c) => {
 	if (!(isSignupAllowed(config, email) || (!mailer.enabled && invited))) {
 		err("Registration not allowed or user already exists")
 	}
+	if (!loginAllowed(config, email)) err("Registration not allowed or user already exists")
 
 	const shouldSendMail = mailer.enabled && config.signupsVerify
 	const token = await encodeJwt(
@@ -783,6 +799,7 @@ async function registerHandler(c: Ctx, emailVerification: boolean) {
 
 	const email = normalizeEmail(String(ci(body, "email") ?? ""))
 	if (!email) err("Invalid email address")
+	if (!loginAllowed(config, email)) err("Registration not allowed or user already exists")
 
 	let name = (ci<string>(body, "name") ?? null) as string | null
 	const keysRaw = (ci<Record<string, unknown>>(body, "keys") ??

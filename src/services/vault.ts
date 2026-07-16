@@ -468,6 +468,19 @@ export function sendAccessId(sendUuid: string): string {
 	return b64UrlEncode(bytes)
 }
 
+/**
+ * Inverse of sendAccessId: decode a base64url access id back to the canonical
+ * Send UUID, or null if it is not a valid 16-byte access id. Mirrors
+ * vaultwarden Send::find_by_access_id so callers can do an indexed lookup
+ * instead of scanning every send.
+ */
+export function accessIdToSendUuid(accessId: string): string | null {
+	const bytes = Buffer.from(accessId, "base64url")
+	if (bytes.length !== 16) return null
+	const hex = bytes.toString("hex")
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 export function sendToJson(send: Send): JsonMap {
 	const data = parseObject(send.data)
 	if (typeof data.size === "number") data.size = String(data.size)

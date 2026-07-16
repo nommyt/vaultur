@@ -82,6 +82,19 @@ export const SETTINGS_GROUPS: SettingGroup[] = [
 						.filter(Boolean))
 			},
 			{
+				name: "login_allowed_emails",
+				label: "Allowed login emails",
+				type: "text",
+				description:
+					"Comma-separated list of email addresses allowed to log in or register. If set, every other account is refused at all login grants (password, SSO, API key, refresh) and at registration. Empty allows all accounts.",
+				get: (c) => c.loginAllowedEmails.join(","),
+				apply: (c, v) =>
+					(c.loginAllowedEmails = str(v)
+						.split(",")
+						.map((s) => s.trim().toLowerCase())
+						.filter(Boolean))
+			},
+			{
 				name: "invitations_allowed",
 				label: "Allow invitations",
 				type: "checkbox",

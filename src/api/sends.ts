@@ -21,7 +21,7 @@ import { err, errCode, notFound } from "../error"
 import { isAtLeast } from "../services/memberships"
 import { Notify } from "../services/notify"
 import { touchUser } from "../services/users"
-import { sendToJson, sendAccessId, displaySize } from "../services/vault"
+import { sendToJson, accessIdToSendUuid, displaySize } from "../services/vault"
 import { MembershipStatus, MembershipType, OrgPolicyType, SendType, UpdateType } from "../shared"
 import {
 	b64Decode,
@@ -214,8 +214,10 @@ sendAccessRoutes.post("/sends/access/:accessId", async (c) => {
 	const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
 	const password = ci<string>(body, "password")
 
-	const all = await db.select().from(sends)
-	const send = all.find((s) => sendAccessId(s.uuid) === accessId)
+	const sendUuid = accessIdToSendUuid(accessId)
+	const send = sendUuid
+		? await db.query.sends.findFirst({ where: eq(sends.uuid, sendUuid) })
+		: undefined
 	if (!send) errCode(SEND_INACCESSIBLE_MSG, 404)
 	checkAccessible(send)
 

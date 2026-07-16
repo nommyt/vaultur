@@ -3,7 +3,7 @@ import { Hono } from "hono"
 import type { Context } from "hono"
 
 import { requireAuth, auth } from "../auth/middleware"
-import { webauthnSupported, yubicoConfigured } from "../config"
+import { loginAllowed, webauthnSupported, yubicoConfigured } from "../config"
 import { verifyPassword } from "../crypto"
 import { devices, nowDb, twofactor, users, type Db, type User } from "../db"
 import type { AppEnv } from "../env"
@@ -11,6 +11,7 @@ import { err } from "../error"
 import { duoApiRequest, getUserDuoData, type DuoData } from "../services/duo"
 import { logUserEvent } from "../services/events"
 import { createMailer, mail } from "../services/mail"
+import { checkUserLoginFailureLimit, recordUserLoginFailure } from "../services/ratelimit"
 import {
 	findTwoFactors,
 	sendEmailLoginToken,
@@ -95,16 +96,22 @@ twofactorRoutes.post("/two-factor/send-email-login", async (c) => {
 	const email = normalizeEmail(String(ci(body, "email") ?? ""))
 	const passwordHash = ci<string>(body, "masterPasswordHash")
 	if (!email || !passwordHash) err("Email and masterPasswordHash are required")
+	const config = c.get("config")
+	if (!loginAllowed(config, email)) err("Username or password is incorrect. Try again.")
+	await checkUserLoginFailureLimit(c.env.VAULTUR_KV, config, email)
 
 	const db = c.get("db")
 	const user = await findUserByEmail(db, email)
-	if (!user) err("Username or password is incorrect. Try again.")
+	if (!user) {
+		await recordUserLoginFailure(c.env.VAULTUR_KV, email)
+		err("Username or password is incorrect. Try again.")
+	}
 	if (!(await verifyUserPassword(user, passwordHash))) {
+		await recordUserLoginFailure(c.env.VAULTUR_KV, email)
 		err("Username or password is incorrect. Try again.")
 	}
 	if (!user.enabled) err("This user has been disabled")
 
-	const config = c.get("config")
 	const mailer = createMailer(c.env.VAULTUR_EMAIL, config)
 	await sendEmailLoginToken(db, mailer, config, user.uuid, c.get("ip"))
 	return c.body(null, 200)
@@ -118,10 +125,13 @@ twofactorRoutes.post("/two-factor/recover", async (c) => {
 		.replace(/\s/g, "")
 		.toLowerCase()
 	if (!email || !passwordHash || !recoveryCode) err("Missing required fields")
+	if (!loginAllowed(c.get("config"), email)) err("Username or password is incorrect. Try again.")
+	await checkUserLoginFailureLimit(c.env.VAULTUR_KV, c.get("config"), email)
 
 	const db = c.get("db")
 	const user = await findUserByEmail(db, email)
 	if (!user || !(await verifyUserPassword(user, passwordHash))) {
+		await recordUserLoginFailure(c.env.VAULTUR_KV, email)
 		err("Username or password is incorrect. Try again.")
 	}
 	if (!user.totpRecover || user.totpRecover.toLowerCase() !== recoveryCode) {

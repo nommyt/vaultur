@@ -1,6 +1,7 @@
 import { clamp } from "es-toolkit"
 
 import type { Bindings } from "./env"
+import { normalizeEmail } from "./util"
 
 const bool = (v: string | undefined, dflt: boolean) =>
 	v == null || v === "" ? dflt : v === "true" || v === "1"
@@ -14,6 +15,8 @@ export interface Config {
 	domain: string
 	signupsAllowed: boolean
 	signupsDomainsWhitelist: string[]
+	/** When non-empty, only these emails may authenticate or register. */
+	loginAllowedEmails: string[]
 	signupsVerify: boolean
 	invitationsAllowed: boolean
 	emergencyAccessAllowed: boolean
@@ -34,6 +37,8 @@ export interface Config {
 	iconService: string
 	iconCacheTtlSeconds: number
 	loginRatelimitMaxBurst: number
+	/** Failed login attempts per account per minute before a 60s lockout. */
+	loginRatelimitUserMaxFailures: number
 	adminSessionLifetimeMinutes: number
 	adminTokenSet: boolean
 	userAttachmentLimitKb: number | null
@@ -81,6 +86,10 @@ export function loadConfig(env: Bindings, requestUrl: string): Config {
 			.split(",")
 			.map((s) => s.trim().toLowerCase())
 			.filter(Boolean),
+		loginAllowedEmails: (env.LOGIN_ALLOWED_EMAILS ?? "")
+			.split(",")
+			.map((s) => s.trim().toLowerCase())
+			.filter(Boolean),
 		signupsVerify: bool(env.SIGNUPS_VERIFY, false),
 		invitationsAllowed: bool(env.INVITATIONS_ALLOWED, true),
 		emergencyAccessAllowed: bool(env.EMERGENCY_ACCESS_ALLOWED, true),
@@ -105,6 +114,7 @@ export function loadConfig(env: Bindings, requestUrl: string): Config {
 		iconService: env.ICON_SERVICE || "internal",
 		iconCacheTtlSeconds: int(env.ICON_CACHE_TTL_SECONDS, 2_592_000),
 		loginRatelimitMaxBurst: int(env.LOGIN_RATELIMIT_MAX_BURST, 10),
+		loginRatelimitUserMaxFailures: int(env.LOGIN_RATELIMIT_USER_MAX_FAILURES, 5),
 		adminSessionLifetimeMinutes: int(env.ADMIN_SESSION_LIFETIME_MINUTES, 20),
 		adminTokenSet: Boolean(env.ADMIN_TOKEN && env.ADMIN_TOKEN.length >= 8),
 		userAttachmentLimitKb: env.ATTACHMENT_LIMIT_PER_USER_KB
@@ -168,4 +178,15 @@ export function webauthnSupported(config: Config): boolean {
 /** SSO is usable only when enabled and fully configured. */
 export function ssoConfigured(config: Config): boolean {
 	return Boolean(config.ssoEnabled && config.ssoAuthority && config.ssoClientId)
+}
+
+/**
+ * When LOGIN_ALLOWED_EMAILS is non-empty, only the listed emails may obtain
+ * tokens (any grant type) or register. Empty list = no restriction. This is
+ * Vaultur-specific hardening for small/personal public deployments; it has
+ * no vaultwarden equivalent.
+ */
+export function loginAllowed(config: Config, email: string): boolean {
+	if (config.loginAllowedEmails.length === 0) return true
+	return config.loginAllowedEmails.includes(normalizeEmail(email))
 }

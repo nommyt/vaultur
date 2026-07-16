@@ -173,4 +173,37 @@ describe("sends", () => {
 		const gone = (await (await api(token, "GET", "/api/sends")).json()) as Record<string, any>
 		expect(gone.data).toHaveLength(0)
 	})
+
+	it("returns 404 for an unknown or malformed access id", async () => {
+		for (const bad of ["not-a-real-access-id", "AAAA", "%%%"]) {
+			const res = await SELF.fetch(`https://vault.test/api/sends/access/${bad}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({})
+			})
+			expect(res.status).toBe(404)
+		}
+	})
+
+	it("resolves each send by its own access id", async () => {
+		const { access_token: token } = await registerAndLogin()
+		const a = (await (
+			await api(token, "POST", "/api/sends", textSend({ name: "2.A|iv==" }))
+		).json()) as Record<string, any>
+		const b = (await (
+			await api(token, "POST", "/api/sends", textSend({ name: "2.B|iv==" }))
+		).json()) as Record<string, any>
+
+		const accessOf = async (accessId: string) =>
+			(await (
+				await SELF.fetch(`https://vault.test/api/sends/access/${accessId}`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({})
+				})
+			).json()) as Record<string, any>
+
+		expect((await accessOf(a.accessId)).id).toBe(a.id)
+		expect((await accessOf(b.accessId)).id).toBe(b.id)
+	})
 })

@@ -14,6 +14,9 @@
 			"enabled": false
 		}
 	},
+	// Once a custom domain is routed (docs/deployment.md §7), set this to false
+	// so the well-known *.workers.dev hostname stops serving your vault — see
+	// docs/deployment.md §11 "Hardening a public deployment".
 	"workers_dev": true,
 	"preview_urls": false,
 	// ---------------------------------------------------------------------
@@ -132,6 +135,9 @@
 		// Comma-separated list of email domains allowed to sign up even when
 		// SIGNUPS_ALLOWED is false.
 		"SIGNUPS_DOMAINS_WHITELIST": "",
+		// Comma-separated emails allowed to log in / register. Empty allows all.
+		// Enforced at every token grant (password, SSO, API key, refresh).
+		"LOGIN_ALLOWED_EMAILS": "",
 		"SIGNUPS_VERIFY": "false",
 		"INVITATIONS_ALLOWED": "true",
 		"EMERGENCY_ACCESS_ALLOWED": "true",
@@ -158,6 +164,9 @@
 		"ICON_CACHE_TTL_SECONDS": "2592000",
 		"USER_ATTACHMENT_LIMIT": "",
 		"LOGIN_RATELIMIT_MAX_BURST": "10",
+		// Failed logins per account per minute before a 60s lockout (failures only;
+		// successful logins never count). Complements the per-IP limit above.
+		"LOGIN_RATELIMIT_USER_MAX_FAILURES": "5",
 		"ADMIN_SESSION_LIFETIME_MINUTES": "20"
 	}
 }
