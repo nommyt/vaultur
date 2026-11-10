@@ -152,18 +152,35 @@ describe("scheduled: trash purge", () => {
 		expect((await bucket.list({ prefix: "attachments/sched-z/" })).objects).toHaveLength(0)
 	})
 
-	it("caps one run at the limit and the next run drains the rest", async () => {
-		const total = MAX_PURGE_PER_RUN + 2
-		for (let i = 0; i < total; i++) {
+	it("purges every trashed cipher without attachments in one run, caps those with attachments", async () => {
+		const plain = MAX_PURGE_PER_RUN + 5
+		for (let i = 0; i < plain; i++) {
+			await addTrashedCipher(`sched-p-${String(i).padStart(3, "0")}`, ago(60 * DAY), [])
+		}
+		const withFiles = MAX_PURGE_PER_RUN + 2
+		for (let i = 0; i < withFiles; i++) {
 			await addTrashedCipher(
-				`sched-t-${String(i).padStart(3, "0")}`,
-				ago((60 + total - i) * DAY),
-				[]
+				`sched-f-${String(i).padStart(3, "0")}`,
+				ago((60 + withFiles - i) * DAY),
+				[`f${i}`]
 			)
 		}
 
 		await runScheduledJobs(WEEKLY, bindings)
-		expect(await db.select().from(ciphers)).toHaveLength(2)
+		const left = (await db.select({ uuid: ciphers.uuid }).from(ciphers)).map((c) => c.uuid).sort()
+		// All plain ciphers are gone, the two newest cipher-with-file rows remain with their blobs.
+		expect(left).toEqual([
+			`sched-f-${String(withFiles - 2).padStart(3, "0")}`,
+			`sched-f-${String(withFiles - 1).padStart(3, "0")}`
+		])
+		expect((await bucket.list({ prefix: "attachments/sched-f-000/" })).objects).toHaveLength(0)
+		expect(
+			(
+				await bucket.list({
+					prefix: `attachments/sched-f-${String(withFiles - 1).padStart(3, "0")}/`
+				})
+			).objects
+		).toHaveLength(1)
 
 		await runScheduledJobs(WEEKLY, bindings)
 		expect(await db.select().from(ciphers)).toHaveLength(0)
