@@ -46,8 +46,14 @@ export class R2BlobStore implements BlobStore {
 	}
 
 	async deletePrefix(prefix: string): Promise<void> {
-		const list = await this.bucket.list({ prefix })
-		await Promise.all(list.objects.map((o) => this.bucket.delete(o.key)))
+		let cursor: string | undefined
+		for (;;) {
+			const list = await this.bucket.list({ prefix, cursor })
+			// One batch delete per page (up to 1000 keys) keeps the subrequest count low.
+			if (list.objects.length > 0) await this.bucket.delete(list.objects.map((o) => o.key))
+			if (!list.truncated) break
+			cursor = list.cursor
+		}
 	}
 }
 
