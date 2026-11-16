@@ -26,6 +26,17 @@ const R2_MAX_BYTES = 500 * 1024 * 1024
 // KV's hard per-value size limit (not merely a free-tier quota).
 const KV_MAX_BYTES = 25 * 1024 * 1024
 
+/** Yields the keys under a prefix one listing page at a time (up to 1000 keys per page). */
+export async function* listKeys(bucket: R2Bucket, prefix: string): AsyncGenerator<string[]> {
+	let cursor: string | undefined
+	for (;;) {
+		const list = await bucket.list({ prefix, cursor })
+		if (list.objects.length > 0) yield list.objects.map((o) => o.key)
+		if (!list.truncated) return
+		cursor = list.cursor
+	}
+}
+
 export class R2BlobStore implements BlobStore {
 	readonly maxBytes = R2_MAX_BYTES
 
@@ -46,8 +57,8 @@ export class R2BlobStore implements BlobStore {
 	}
 
 	async deletePrefix(prefix: string): Promise<void> {
-		const list = await this.bucket.list({ prefix })
-		await Promise.all(list.objects.map((o) => this.bucket.delete(o.key)))
+		// One batch delete per page (up to 1000 keys) keeps the subrequest count low.
+		for await (const keys of listKeys(this.bucket, prefix)) await this.bucket.delete(keys)
 	}
 }
 
