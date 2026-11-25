@@ -26,3 +26,5 @@ jobs:
       - run: pnpm test
       - run: pnpm test:heavy
       - run: pnpm build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

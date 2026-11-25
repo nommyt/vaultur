@@ -18,17 +18,20 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT_DIR/public/web-vault"
 OVERRIDES="$ROOT_DIR/public/overrides"
 
-curl_gh() {
+curl_gh_api() {
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
+    curl -fsS --retry 3 -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
   else
-    curl -fsSL "$@"
+    curl -fsS --retry 3 "$@"
   fi
 }
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  VERSION=$(curl_gh "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+  if ! VERSION=$(curl_gh_api "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p'); then
+    echo "Could not query the latest bw_web_builds release from the GitHub API" >&2
+    exit 1
+  fi
 fi
 if [[ -z "$VERSION" ]]; then
   echo "Could not determine bw_web_builds version" >&2
@@ -39,7 +42,7 @@ echo "Fetching bw_web_builds $VERSION ..."
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-curl_gh -o "$TMP/web-vault.tar.gz" \
+curl -fsSL --retry 3 -o "$TMP/web-vault.tar.gz" \
   "https://github.com/$REPO/releases/download/$VERSION/bw_web_$VERSION.tar.gz"
 
 rm -rf "$DEST"
