@@ -282,9 +282,9 @@ Two cron triggers are configured in `wrangler.jsonc` and deploy automatically:
 
 - `12 7 * * 1` (every Sunday 07:12; Cloudflare cron uses 1=Sunday) — purge soft-deleted ciphers older than
   `TRASH_AUTO_DELETE_DAYS`.
-- `*/15 * * * *` — purge expired Sends (and their stored files, in KV or R2),
-  expired auth-requests, and stale incomplete-2FA records. Early-outs when
-  there is nothing to purge, to avoid unnecessary storage/DB writes.
+- `*/15 * * * *` — purge expired Sends, auth requests, and stale 2FA and SSO
+  state. Drain queued Send files and cipher attachments from KV or R2, including
+  retries from earlier runs.
 
 ---
 
@@ -347,12 +347,13 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ### 11.2 Put Cloudflare Access only on browser surfaces
 
-The client compatibility rule is absolute: **never put** `/api/*`,
+For clients that connect directly to Cloudflare, keep `/api/*`,
 `/identity/*`, `/notifications/*`, `/icons/*`, `/events/*`, `/alive`,
-`/app-id.json`, or `/.well-known/*` behind Cloudflare Access. Native Bitwarden
+`/app-id.json`, and `/.well-known/*` outside Cloudflare Access. Native Bitwarden
 mobile, desktop, extension, and CLI clients cannot complete an interactive
 Access login or attach Access service-token headers. Protecting those paths
-breaks the clients; `LOGIN_ALLOWED_EMAILS` is the identity boundary for them.
+requires a gateway that authenticates to Access on their behalf. See
+[Tailnet-only access](#116-tailnet-only-access).
 
 Protect `/admin` with a self-hosted Access application:
 
@@ -441,10 +442,55 @@ generator, and store it only as a Wrangler secret.
 
 ### 11.5 What remains public
 
-The Bitwarden protocol requires endpoints such as `/api/config`,
-`/identity/accounts/prelogin`, and public Send access to remain unauthenticated.
-Fingerprinting the server as Bitwarden-compatible is therefore inherent; the
-vault payload remains end-to-end encrypted regardless.
+When clients connect directly to a public deployment, endpoints such as
+`/api/config`, `/identity/accounts/prelogin`, and public Send access accept
+requests without a Vaultur account. The vault payload remains end-to-end
+encrypted.
+
+### 11.6 Tailnet-only access
+
+Keep Vaultur on Cloudflare and run a reverse proxy on an always-on Tailscale
+device. Bitwarden connects to a Tailscale Serve HTTPS URL. The proxy forwards
+requests to the Cloudflare custom hostname and adds a Cloudflare Access service
+token. [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) ·
+[Cloudflare Access service tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)
+
+1. Create a service token in Cloudflare Zero Trust for the gateway. Store its
+   client ID and client secret in the proxy service's private environment.
+2. On the Tailscale device, configure a reverse proxy that supports WebSocket
+   upgrades. In this Caddy example, replace `vault.example.com` with the Worker
+   hostname.
+
+   ```caddyfile
+   http://:8080 {
+       bind 127.0.0.1
+       reverse_proxy https://vault.example.com {
+           header_up Host vault.example.com
+           header_up CF-Access-Client-Id {env.CF_ACCESS_CLIENT_ID}
+           header_up CF-Access-Client-Secret {env.CF_ACCESS_CLIENT_SECRET}
+       }
+   }
+   ```
+
+3. With MagicDNS and HTTPS certificates enabled, run
+   `tailscale serve --bg http://127.0.0.1:8080` on the device. Use tailnet grants
+   to restrict HTTPS to the intended users or devices. Verify `/alive` and
+   `/api/config` at the Serve URL from another tailnet device before cutover.
+4. Set `DOMAIN` in the live Worker configuration to the Serve URL. Keep
+   `workers_dev` and `preview_urls` disabled. In Cloudflare Access, protect the
+   entire custom hostname with a self-hosted application whose only policy is
+   **Service Auth** for the gateway's token. Replace any existing `/admin`
+   application or give it the same service-only policy. A more specific
+   application overrides the hostname policy. Keep Vaultur's `ADMIN_TOKEN`
+   for admin login. [Cloudflare Access application paths](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
+5. Verify that direct requests to the custom hostname are blocked by Access
+   for `/`, `/api/config`, `/identity/accounts/prelogin`, and `/admin`. Check
+   that `/api/config`, sign-in, sync, and attachments work through the Serve URL.
+   Confirm the Serve URL is unreachable from outside the tailnet.
+
+Changing `DOMAIN` requires clients to sign in again and WebAuthn credentials
+to be re-enrolled. Confirm a recovery method before switching. Send recipients
+also need access to the tailnet. See [section 11.1](#111-move-to-a-custom-domain-then-disable-workersdev).
 
 ---
 

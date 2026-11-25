@@ -268,6 +268,15 @@ export const sends = sqliteTable(
 	]
 )
 
+export const pendingBlobDeletions = sqliteTable(
+	"pending_blob_deletions",
+	{
+		prefix: text("prefix").primaryKey(),
+		attempts: integer("attempts").notNull().default(0)
+	},
+	(t) => [index("idx_pending_blob_deletions_attempts").on(t.attempts, t.prefix)]
+)
+
 // ---------------------------------------------------------------------------
 // Organizations
 // ---------------------------------------------------------------------------

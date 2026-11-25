@@ -679,10 +679,12 @@ async function restore(c: Ctx, cipher: Cipher) {
 	const { user, device } = auth(c)
 	cipher.deletedAt = null
 	cipher.updatedAt = nowDb()
-	await db
+	const [restored] = await db
 		.update(ciphers)
 		.set({ deletedAt: null, updatedAt: cipher.updatedAt })
 		.where(eq(ciphers.uuid, cipher.uuid))
+		.returning({ uuid: ciphers.uuid })
+	if (!restored) notFound("Cipher not found")
 	const affected = await updateUsersRevisionForCipher(db, cipher)
 	notifier(c).cipherUpdate(UpdateType.SyncCipherUpdate, cipher, affected, device.uuid)
 	if (cipher.organizationUuid) {

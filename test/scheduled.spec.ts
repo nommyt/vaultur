@@ -2,7 +2,16 @@ import { env } from "cloudflare:test"
 import { eq } from "drizzle-orm"
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { attachments, ciphers, createDb, sends, toDb, twofactorDuoCtx } from "../src/db"
+import {
+	attachments,
+	ciphers,
+	createDb,
+	pendingBlobDeletions,
+	sends,
+	ssoAuth,
+	toDb,
+	twofactorDuoCtx
+} from "../src/db"
 import type { Bindings } from "../src/env"
 import { MAX_PURGE_PER_RUN, runScheduledJobs } from "../src/jobs/scheduled"
 
@@ -73,7 +82,9 @@ async function sendUuids(): Promise<string[]> {
 describe("scheduled: expired sends", () => {
 	beforeEach(async () => {
 		await db.delete(sends)
+		await db.delete(pendingBlobDeletions)
 		await db.delete(twofactorDuoCtx)
+		await db.delete(ssoAuth)
 	})
 
 	it("keeps going when one Send cleanup fails", async () => {
@@ -84,7 +95,10 @@ describe("scheduled: expired sends", () => {
 
 		await runScheduledJobs(EVERY_15_MIN, envWith(bucketFailingFor("sends/sched-bad/")))
 
-		expect(await sendUuids()).toEqual(["sched-bad"])
+		expect(await sendUuids()).toEqual([])
+		expect(await db.select().from(pendingBlobDeletions)).toEqual([
+			{ prefix: "sends/sched-bad/", attempts: 1 }
+		])
 		expect((await bucket.list({ prefix: "sends/sched-a/" })).objects).toHaveLength(0)
 		expect((await bucket.list({ prefix: "sends/sched-c/" })).objects).toHaveLength(0)
 		// Cleanup after the Sends loop still ran.
@@ -92,8 +106,25 @@ describe("scheduled: expired sends", () => {
 
 		// The next run retries the failed Send.
 		await runScheduledJobs(EVERY_15_MIN, bindings)
-		expect(await sendUuids()).toEqual([])
+		expect(await db.select().from(pendingBlobDeletions)).toEqual([])
 		expect((await bucket.list({ prefix: "sends/sched-bad/" })).objects).toHaveLength(0)
+	})
+
+	it("purges stale Duo and SSO state on an otherwise idle run", async () => {
+		await db.insert(twofactorDuoCtx).values({ state: "s", userEmail: "e", nonce: "n", exp: 1 })
+		await db.insert(ssoAuth).values({
+			state: "stale-sso",
+			clientChallenge: "c",
+			nonce: "n",
+			redirectUri: "https://vault.example.test",
+			createdAt: ago(DAY),
+			updatedAt: ago(DAY)
+		})
+
+		await runScheduledJobs(EVERY_15_MIN, bindings)
+
+		expect(await db.select().from(twofactorDuoCtx)).toEqual([])
+		expect(await db.select().from(ssoAuth)).toEqual([])
 	})
 
 	it("caps one run at the limit and the next run drains the rest", async () => {
@@ -120,6 +151,7 @@ describe("scheduled: expired sends", () => {
 describe("scheduled: trash purge", () => {
 	beforeEach(async () => {
 		await db.delete(ciphers)
+		await db.delete(pendingBlobDeletions)
 	})
 
 	it("removes attachment blobs and rows, leaves recent trash alone", async () => {
@@ -137,22 +169,28 @@ describe("scheduled: trash purge", () => {
 		expect(await db.select().from(ciphers).where(eq(ciphers.uuid, "sched-new"))).toHaveLength(1)
 	})
 
-	it("keeps a cipher whose blob cleanup fails and purges the others", async () => {
+	it("retries failed blob cleanup after the cipher and attachment rows are removed", async () => {
 		await addTrashedCipher("sched-x", ago(50 * DAY), ["x1"])
 		await addTrashedCipher("sched-bad", ago(45 * DAY), ["y1"])
 		await addTrashedCipher("sched-z", ago(40 * DAY), ["z1"])
 
 		await runScheduledJobs(WEEKLY, envWith(bucketFailingFor("attachments/sched-bad/")))
 
-		const left = (await db.select({ uuid: ciphers.uuid }).from(ciphers)).map((c) => c.uuid)
-		expect(left).toEqual(["sched-bad"])
+		expect(await db.select().from(ciphers)).toEqual([])
 		expect(
 			await db.select().from(attachments).where(eq(attachments.cipherUuid, "sched-bad"))
-		).toHaveLength(1)
+		).toEqual([])
+		expect(await db.select().from(pendingBlobDeletions)).toEqual([
+			{ prefix: "attachments/sched-bad/", attempts: 1 }
+		])
 		expect((await bucket.list({ prefix: "attachments/sched-z/" })).objects).toHaveLength(0)
+
+		await runScheduledJobs(EVERY_15_MIN, bindings)
+		expect(await db.select().from(pendingBlobDeletions)).toEqual([])
+		expect((await bucket.list({ prefix: "attachments/sched-bad/" })).objects).toHaveLength(0)
 	})
 
-	it("purges every trashed cipher without attachments in one run, caps those with attachments", async () => {
+	it("drains excess blobs on the next 15-minute run even if a prefix keeps failing", async () => {
 		const plain = MAX_PURGE_PER_RUN + 5
 		for (let i = 0; i < plain; i++) {
 			await addTrashedCipher(`sched-p-${String(i).padStart(3, "0")}`, ago(60 * DAY), [])
@@ -166,14 +204,12 @@ describe("scheduled: trash purge", () => {
 			)
 		}
 
-		await runScheduledJobs(WEEKLY, bindings)
-		const left = (await db.select({ uuid: ciphers.uuid }).from(ciphers)).map((c) => c.uuid).sort()
-		// All plain ciphers are gone, the two newest cipher-with-file rows remain with their blobs.
-		expect(left).toEqual([
-			`sched-f-${String(withFiles - 2).padStart(3, "0")}`,
-			`sched-f-${String(withFiles - 1).padStart(3, "0")}`
-		])
-		expect((await bucket.list({ prefix: "attachments/sched-f-000/" })).objects).toHaveLength(0)
+		const failedPrefix = "attachments/sched-f-000/"
+		const failing = envWith(bucketFailingFor(failedPrefix))
+		await runScheduledJobs(WEEKLY, failing)
+		expect(await db.select().from(ciphers)).toEqual([])
+		expect(await db.select().from(pendingBlobDeletions)).toHaveLength(3)
+		expect((await bucket.list({ prefix: "attachments/sched-f-001/" })).objects).toHaveLength(0)
 		expect(
 			(
 				await bucket.list({
@@ -182,7 +218,14 @@ describe("scheduled: trash purge", () => {
 			).objects
 		).toHaveLength(1)
 
-		await runScheduledJobs(WEEKLY, bindings)
-		expect(await db.select().from(ciphers)).toHaveLength(0)
+		await runScheduledJobs(EVERY_15_MIN, failing)
+		expect(await db.select().from(pendingBlobDeletions)).toEqual([
+			{ prefix: failedPrefix, attempts: 2 }
+		])
+		expect((await bucket.list({ prefix: "attachments/sched-f-" })).objects).toHaveLength(1)
+
+		await runScheduledJobs(EVERY_15_MIN, bindings)
+		expect(await db.select().from(pendingBlobDeletions)).toEqual([])
+		expect((await bucket.list({ prefix: "attachments/sched-f-" })).objects).toHaveLength(0)
 	})
 })

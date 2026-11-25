@@ -493,10 +493,12 @@ sendRoutes.put("/sends/:id", async (c) => {
 		send.passwordIter = pw.iter
 	}
 
-	await db
+	const [updated] = await db
 		.update(sends)
 		.set({ ...send })
 		.where(eq(sends.uuid, send.uuid))
+		.returning({ uuid: sends.uuid })
+	if (!updated) notFound("Send not found")
 	await touchUser(db, user.uuid)
 	sendNotifier(c).sendUpdate(UpdateType.SyncSendUpdate, send, [user.uuid], device.uuid)
 	return c.json(sendToJson(send))
